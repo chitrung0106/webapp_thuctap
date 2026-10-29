@@ -1,14 +1,15 @@
 let py, cancelFlag, active=false;
 self.browser_progress = json => self.postMessage({kind:'run',run:JSON.parse(json)});
 self.browser_cancelled = () => Boolean(cancelFlag && Atomics.load(cancelFlag,0));
-const emit=(state,detail)=>self.postMessage({kind:'runtime',state,detail});
+const emit=(state,detail,progress)=>self.postMessage({kind:'runtime',state,detail,progress});
 async function initialize(){
  emit('loading','Đang tải Python và các thư viện WebAssembly...');
  const {loadPyodide}=await import(/* @vite-ignore */ 'https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.mjs');
  py=await loadPyodide({indexURL:'https://cdn.jsdelivr.net/pyodide/v314.0.7/full/'});
- await py.loadPackage(['numpy','scipy','pandas','scikit-learn','joblib','pydantic','xgboost','lightgbm']);
+ const packages=['numpy','scipy','pandas','scikit-learn','joblib','pydantic'];
+ for(const [i,name] of packages.entries()){emit('loading',`Đang nạp thư viện ${i+1}/${packages.length}: ${name}`,{current:i,total:packages.length});await py.loadPackage(name);emit('loading',`Đã nạp ${i+1}/${packages.length} thư viện`,{current:i+1,total:packages.length});}
  const files=await(await fetch('/browser-python/manifest.json')).json();
- for(const name of files){const response=await fetch('/browser-python/'+name);if(!response.ok)throw Error('Không tải được source '+name);py.FS.mkdirTree('/browser-src/'+name.split('/').slice(0,-1).join('/'));py.FS.writeFile('/browser-src/'+name,await response.text());}
+ for(const [i,name] of files.entries()){emit('loading',`Đang nạp mã xử lý ${i+1}/${files.length}`);const response=await fetch('/browser-python/'+name);if(!response.ok)throw Error('Không tải được source '+name);py.FS.mkdirTree('/browser-src/'+name.split('/').slice(0,-1).join('/'));py.FS.writeFile('/browser-src/'+name,await response.text());}
  await py.runPythonAsync("import sys; sys.path.insert(0, '/browser-src'); import browser_engine as engine");
  emit('ready','Sẵn sàng · Train bằng CPU/RAM của thiết bị này');
  return JSON.parse(py.runPython('engine.capabilities()'));
@@ -39,9 +40,13 @@ self.onmessage=async({data})=>{const{id,command,args}=data;try{
  if(command==='init'||command==='capabilities')value=cap;
  else if(command==='gpuDiagnostics'){const gpu=await import('./gpuTraining.js');value=gpu.gpuDiagnostics();}
  else if(command==='start'){
+  for(const name of ['xgboost','lightgbm'])if(args.plan.jobs.some(job=>job.modelId===name)){emit('loading','Đang nạp thư viện model '+name);await py.loadPackage(name);}
   if(active)throw Error('Đang có lượt train trong trình duyệt.');Atomics.store(cancelFlag,0,0);
   py.globals.set('raw_plan',JSON.stringify(args.plan));value=JSON.parse(await py.runPythonAsync('engine.start(raw_plan)'));
   self.postMessage({id,value});setTimeout(()=>train(value.id),0);return;
+ }else if(command==='predict'){
+  if(active)throw Error('Chờ huấn luyện kết thúc trước khi thử dự đoán.');
+  py.globals.set('run_key',args.id);py.globals.set('prediction_json',JSON.stringify(args.input));value=JSON.parse(await py.runPythonAsync('engine.predict(run_key, prediction_json)'));
  }else if(command==='preview'||command==='export'){
   if(active)throw Error('Chờ lượt train kết thúc trước khi export.');
   py.globals.set('run_key',args.id);py.globals.set('raw_options',JSON.stringify(args.options));

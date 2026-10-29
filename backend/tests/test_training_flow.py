@@ -268,3 +268,19 @@ def test_gpu_execution_configuration_survives_plan_serialization():
     request['execution'] = {'environment': 'browser', 'device': 'gpu', 'concurrentJobs': 1, 'targetStrategy': 'separate'}
     restored = TrainingRequest.model_validate(request).model_dump(by_alias=True)
     assert restored['execution'] == request['execution']
+
+
+@pytest.mark.parametrize('task', ['classification','regression'])
+def test_prediction_uses_saved_pipeline_and_rejects_bad_input(client,task):
+    started=client.post('/api/training/runs',json=plan(task)).json()
+    run=wait_run(client,started['id'])
+    url=f"/api/training/runs/{run['id']}/predict"
+    response=client.post(url,json={'resultId':'model-0','rows':[['12','new device'],['30','pump']]})
+    assert response.status_code==200,response.text
+    data=response.json()
+    assert len(data['predictions'])==2
+    assert data['inputColumns']==['x','device']
+    assert isinstance(data['predictions'][0],str if task=='classification' else (float,int))
+    for rows in [[['bad','pump']],[['Infinity','pump']],[['12']]]:
+        assert client.post(url,json={'resultId':'model-0','rows':rows}).status_code==400
+    assert client.post(url,json={'resultId':'../model-0','rows':[['12','pump']]}).status_code==400

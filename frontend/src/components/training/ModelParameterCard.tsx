@@ -11,17 +11,19 @@ interface ModelParameterCardProps {
   onToggle: () => void;
   onChange: (key: string, value: string | boolean) => void;
   onReset: () => void;
+  unavailable?:boolean;
 }
 
-export default function ModelParameterCard({ model, selected, values, onToggle, onChange, onReset }: ModelParameterCardProps) {
+export default function ModelParameterCard({ model, selected, values, onToggle, onChange, onReset, unavailable }: ModelParameterCardProps) {
   const privateFields = privateParameterFields(model);
   return (
     <article className={`model-config-card ${selected ? "is-selected" : ""}`}>
       <label className="model-choice">
-        <input type="checkbox" checked={selected} onChange={onToggle} />
+        <input type="checkbox" checked={selected} disabled={unavailable&&!selected} onChange={onToggle} />
         <span><strong>{model.name}</strong><span>{model.description}</span></span>
         {model.extended && <span className="model-library-tag">MỞ RỘNG</span>}
       </label>
+      {unavailable&&<p className="dataset-local-note">Model này chưa hỗ trợ trong trình duyệt; Máy chủ đang tạm vô hiệu hóa.</p>}
       {selected && (
         <details className="model-parameters">
           <summary>Thông số riêng · {privateFields.filter((field) => isParameterActive(model.id, field, values)).length} mục</summary>

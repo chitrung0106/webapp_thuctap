@@ -34,6 +34,7 @@ export default function DataUploadPanel({ inputFile, error, onInputChange }: Dat
           {inputFile ? `${inputFile.name} · ${formatBytes(inputFile.size)}` : "Chọn tệp CSV. Cấu trúc dữ liệu sẽ được kiểm tra trước khi hiển thị."}
         </p>
       </div>
+      <p className="dataset-local-note">CSV được đọc theo từng khối ngoài luồng giao diện. Không giới hạn dung lượng tệp, nhưng dữ liệu để chỉnh sửa và huấn luyện vẫn cần vừa RAM của máy thực hiện.</p>
       {error && <p id="upload-error" className="error-message" role="alert">{error}</p>}
     </section>
   );

@@ -38,6 +38,7 @@ function isNumeric(value: string) {
 
 export function inspectTrainingConfig(snapshot: DatasetSnapshot | null, form: TrainingForm) {
   const errors: string[] = [];
+  if(form.shared.environment!=='server'&&form.selected.includes('catboost'))errors.push('CatBoost cần chọn Máy chủ; bỏ chọn model này để train trong trình duyệt.');
   const shared = form.shared;
   if (!snapshot) errors.push("Hoàn tất và xác nhận dữ liệu ở bước 01 trước.");
   const ratios = [shared.trainPercent, shared.validationPercent, shared.testPercent].map(Number);

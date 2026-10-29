@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import {readCsv} from '../services/readCsv';
 import type { ColumnPreprocessing, ColumnRole, CsvDocument, LabelPreprocessing } from "../types/dataset";
-import { createTrainingSnapshot, parseCsv, prepareTrainingData, serializeProcessedCsv } from "../utils/csv";
+import { createTrainingSnapshot, prepareTrainingData, serializeProcessedCsv } from "../utils/csv";
 import { summarizeChanges } from "../utils/datasetChanges";
 import { createColumnPreprocessing, getLabelPreprocessingErrors, getPreprocessingErrors, validateDataset } from "../utils/datasetValidation";
 import { downloadFile } from "../utils/downloadFile";
@@ -22,6 +23,10 @@ export function useDataset() {
   const [columnsConfirmed, updateColumnsConfirmed] = useState(false);
   const [confirmedSnapshot, setConfirmedSnapshot] = useState<TrainingSnapshot | null>(null);
   const readVersion = useRef(0);
+  const readController=useRef<AbortController|null>(null);
+  const [readProgress,setReadProgress]=useState(0);
+  useEffect(()=>()=>readController.current?.abort(),[]);
+  function cancelRead(){readVersion.current++;readController.current?.abort();setIsReading(false);setError('');}
 
   function invalidateConfirmation() {
     updateColumnsConfirmed(false);
@@ -32,6 +37,8 @@ export function useDataset() {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    if(document&&!window.confirm('Đổi tệp sẽ thay dữ liệu và cấu hình cột hiện tại. Bạn đã tải CSV chỉnh sửa cần giữ chưa?'))return;
+    readController.current?.abort();
     const version = ++readVersion.current;
     setError("");
     setIsReading(false);
@@ -40,13 +47,11 @@ export function useDataset() {
       return;
     }
     setIsReading(true);
+    setReadProgress(0);
+    const controller=new AbortController();readController.current=controller;
     try {
-      const buffer = await file.arrayBuffer();
+      const parsed=await readCsv(file,setReadProgress,controller.signal);
       if (version !== readVersion.current) return;
-      let text: string;
-      try { text = new TextDecoder("utf-8", { fatal: true }).decode(buffer); }
-      catch { throw new Error("Tệp CSV phải dùng mã hóa UTF-8. Hãy lưu lại bằng UTF-8 rồi chọn lại."); }
-      const parsed = parseCsv(text);
       if (parsed.columnCount < 2) throw new Error("Cần ít nhất 2 cột để chọn riêng input và label. Hỗ trợ dấu phẩy, chấm phẩy hoặc tab.");
       setLoadId((current) => current + 1);
       setInputFile(file);
@@ -59,7 +64,7 @@ export function useDataset() {
       setExcludedRows(new Set());
       invalidateConfirmation();
     } catch (readError) {
-      if (version === readVersion.current) setError(readError instanceof Error ? readError.message : "Không thể đọc tệp CSV.");
+      if (version === readVersion.current && !(readError instanceof DOMException && readError.name==='AbortError')) setError(readError instanceof Error ? readError.message : "Không thể đọc tệp CSV.");
     } finally {
       if (version === readVersion.current) setIsReading(false);
     }
@@ -77,6 +82,9 @@ export function useDataset() {
   }, [rows, columns, roles, excludedRows, preprocessing, labelPreprocessing]);
   const changes = useMemo(() => summarizeChanges(originalDocument?.rows ?? [], document?.rows ?? []), [originalDocument, document]);
   const hasDataChanges = changes.cellCount > 0 || rows.some((row) => excludedRows.has(row.id));
+  const [downloadedData,setDownloadedData]=useState<{document:CsvDocument;excluded:string}|null>(null);
+  const exclusionKey=[...excludedRows].sort((a,b)=>a-b).join(',');
+  const hasUnsavedDataChanges=hasDataChanges && (downloadedData?.document!==document || downloadedData.excluded!==exclusionKey);
 
   function restoreData() {
     setDocument(originalDocument);
@@ -92,6 +100,7 @@ export function useDataset() {
     if (!document || !inputFile || !includedCount || !hasDataChanges) return;
     const csv = serializeProcessedCsv(document, hasHeader, excludedRows);
     downloadFile(new Blob([csv], { type: "text/csv;charset=utf-8" }), inputFile.name.replace(/\.csv$/i, "") + "-processed.csv");
+    setDownloadedData({document,excluded:exclusionKey});
   }
   function confirmDataset() {
     if (!document || !inputFile || !columnsConfirmed || isReading) return false;
@@ -145,11 +154,11 @@ export function useDataset() {
   }
 
   return {
-    loadId, inputFile, document, error, isReading, updateFile,
+    loadId, inputFile, document, error, isReading, readProgress, cancelRead, updateFile,
     hasHeader, setHasHeader, columns, rows, roles, updateRole,
     excludedRows, toggleExcluded, updateCell, includedCount, missingCount: validation.missingOutputCount,
     preprocessing, updatePreprocessing, preprocessingErrors, labelPreprocessing, updateLabelPreprocessing,
-    validation, trainingData, changes, hasDataChanges, restoreData, downloadProcessedCsv, snapshotForTraining,
+    validation, trainingData, changes, hasDataChanges, hasUnsavedDataChanges, restoreData, downloadProcessedCsv, snapshotForTraining,
     columnsConfirmed, setColumnsConfirmed, confirmedSnapshot, confirmDataset,
   };
 }

@@ -94,6 +94,11 @@ class ModelJob(ApiModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
 
 
+class PredictionRequest(ApiModel):
+    result_id: str = Field(alias="resultId")
+    rows: list[list[str]] = Field(min_length=1)
+
+
 class ExecutionConfig(ApiModel):
     environment: Literal["browser", "server"] = "server"
     device: Literal["cpu", "gpu"] = "cpu"

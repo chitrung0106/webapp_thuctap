@@ -6,6 +6,7 @@ import { formatBytes } from "../../utils/formatBytes";
 import DatasetConfirmation from "./DatasetConfirmation";
 import DatasetChanges from "./DatasetChanges";
 import DatasetTable from "./DatasetTable";
+import CsvReadProgress from './CsvReadProgress';
 
 interface DatasetEditorProps {
   dataset: ReturnType<typeof useDataset>;
@@ -57,7 +58,7 @@ export default function DatasetEditor({ dataset, onContinue }: DatasetEditorProp
       </div>
       <p className="data-file-info">{inputFile.name} · {formatBytes(inputFile.size)} · Dấu phân cách: {delimiterName}</p>
       {error && <p className="error-message" role="alert">{error} Dữ liệu trước đó vẫn được giữ lại.</p>}
-      {isReading && <p className="data-reading" role="status">Đang kiểm tra tệp CSV mới...</p>}
+      {isReading && <CsvReadProgress percent={dataset.readProgress} onCancel={dataset.cancelRead}/>}
 
       <fieldset className="dataset-controls" disabled={isReading}>
         <legend className="visually-hidden">Thiết lập và chỉnh sửa dữ liệu</legend>

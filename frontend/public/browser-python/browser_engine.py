@@ -119,6 +119,11 @@ def next_job(key):
 
 def preview(key,raw):
     return json.dumps(preview_export(key,ExportRequest.model_validate_json(raw)),ensure_ascii=False,allow_nan=False)
+def predict(key,raw):
+    from app.services.model_prediction import predict_saved
+    from app.schemas.training import PredictionRequest
+    body=PredictionRequest.model_validate_json(raw)
+    return json.dumps(predict_saved(get_run(key),run_directory(key),body.result_id,body.rows),ensure_ascii=False,allow_nan=False)
 def export(key,raw):
     content,filename,mime=export_run(key,ExportRequest.model_validate_json(raw))
     Path('/browser-download').write_bytes(content)

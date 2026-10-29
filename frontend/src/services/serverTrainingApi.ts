@@ -4,6 +4,7 @@ import type { TrainingRun } from "../types/trainingRun";
 import { downloadFile } from "../utils/downloadFile";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+export async function predictTrainingModel(id:string,resultId:string,rows:string[][],signal?:AbortSignal){const response=await checked(await fetch(`${API_BASE_URL}/api/training/runs/${encodeURIComponent(id)}/predict`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({resultId,rows}),signal}));return response.json();}
 import { TrainingApiError } from './trainingErrors';
 async function checked(response: Response) {
   if (response.ok) return response;

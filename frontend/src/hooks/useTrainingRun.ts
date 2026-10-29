@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { cancelTraining, getTrainingRun, startTraining, TrainingApiError } from "../services/trainingApi";
+import { cancelTraining, getTrainingRun, startTraining, TrainingApiError, abortBrowserWork, hasUnsavedBrowserModels } from "../services/trainingApi";
 import type { TrainingPlan } from "../types/training";
 import { isRunActive, type TrainingRun } from "../types/trainingRun";
 
@@ -13,6 +13,7 @@ export function useTrainingRun() {
   const [isStarting, setIsStarting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const starting = useRef(false);
+  const attempt=useRef(0);
 
   useEffect(() => {
     if (!runId) return;
@@ -37,17 +38,22 @@ export function useTrainingRun() {
 
   async function start(plan: TrainingPlan) {
     if (starting.current || (run && isRunActive(run.status))) return false;
+    if(hasUnsavedBrowserModels()&&!window.confirm('RUN lượt mới sẽ xóa model tạm của lượt cũ chưa tải về. Tiếp tục?'))return false;
+    const version=++attempt.current;
     starting.current = true; setIsStarting(true); setError("");
     try {
       const started = await startTraining(plan);
+      if(version!==attempt.current)return false;
       setRun(started); setRunId(started.id);
       try { localStorage.setItem(STORAGE_KEY, started.id); } catch { /* optional persistence */ }
       return true;
     } catch (startError) {
-      setError(startError instanceof Error ? startError.message : "Không tạo được lượt train.");
+      if(version===attempt.current)setError(startError instanceof Error ? startError.message : "Không tạo được lượt train.");
       return false;
-    } finally { starting.current = false; setIsStarting(false); }
+    } finally { if(version===attempt.current){starting.current = false; setIsStarting(false);} }
   }
+  function cancelStart(){attempt.current++;abortBrowserWork();starting.current=false;setIsStarting(false);setError('Đã hủy khởi tạo. Bạn có thể RUN lại.');}
+  async function forceStop(){if(!runId?.endsWith('-browser'))return;abortBrowserWork();setRun(await getTrainingRun(runId));setIsCancelling(false);}
   async function cancel() {
     if (!runId || isCancelling) return;
     setIsCancelling(true);
@@ -60,5 +66,5 @@ export function useTrainingRun() {
     setRunId(null); setRun(null); setError("");
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* optional persistence */ }
   }
-  return { runId, run, error, isStarting, isCancelling, start, cancel, forgetRun };
+  return { runId, run, error, isStarting, isCancelling, start, cancel, forceStop, cancelStart, forgetRun };
 }

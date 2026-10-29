@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import TrainingSetup from "../components/training/TrainingSetup";
+import CsvReadProgress from '../components/data/CsvReadProgress';
+import {hasUnsavedBrowserModels} from '../services/trainingApi';
 import TrainingDashboard from "../components/results/TrainingDashboard";
 import { useTrainingSetup } from "../hooks/useTrainingSetup";
 import { useTrainingRun } from "../hooks/useTrainingRun";
@@ -19,6 +21,7 @@ export default function OutputInspectorScreen() {
   const activeStep = step === 3 && run.runId ? 3 : step === 2 && dataset.confirmedSnapshot ? 2 : 1;
   const headingRef = useRef<HTMLHeadingElement>(null);
   const previousStep = useRef(activeStep);
+  useEffect(()=>{const warn=(event:BeforeUnloadEvent)=>{if(dataset.hasUnsavedDataChanges||dataset.isReading||run.isStarting||(run.runId?.endsWith('-browser')&&(hasUnsavedBrowserModels()||Boolean(run.run&&isRunActive(run.run.status))))){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dataset.hasUnsavedDataChanges,dataset.isReading,run.isStarting,run.run,run.runId]);
 
   useEffect(() => {
     if (previousStep.current === activeStep) return;
@@ -52,10 +55,10 @@ export default function OutputInspectorScreen() {
           <button className="workflow-step-button" type="button" disabled={!run.runId} onClick={() => setStep(3)}><span className="step-number">03</span><span className="workflow-step-copy"><strong>Huấn luyện &amp; xuất</strong><span>Theo dõi, so sánh và tải model</span></span></button>
         </li>
       </ol>
-      {activeStep === 1 ? (dataset.document ? <DatasetEditor key={dataset.loadId} dataset={dataset} onContinue={() => setStep(2)} /> : <><DataUploadPanel inputFile={null} error={dataset.error} onInputChange={dataset.updateFile} />{dataset.isReading && <p className="data-reading" role="status">Đang đọc và kiểm tra cấu trúc CSV...</p>}</>) : activeStep === 2 ? (
+      {activeStep === 1 ? (dataset.document ? <DatasetEditor key={dataset.loadId} dataset={dataset} onContinue={() => setStep(2)} /> : <><DataUploadPanel inputFile={null} error={dataset.error} onInputChange={dataset.updateFile} />{dataset.isReading && <CsvReadProgress percent={dataset.readProgress} onCancel={dataset.cancelRead}/>}</>) : activeStep === 2 ? (
         <>
           <div className="wizard-toolbar"><button className="secondary-button" type="button" onClick={() => setStep(1)}>← Quay lại dữ liệu</button><p>Chỉnh sửa dữ liệu không thay đổi lượt train đã chạy; cần xác nhận lại để tạo lượt mới.</p></div>
-          <TrainingSetup snapshot={dataset.confirmedSnapshot} setup={training} onRun={(plan) => void startRun(plan)} isStarting={run.isStarting} runBlocked={dataset.isReading || Boolean(run.run && isRunActive(run.run.status))} runError={run.error} />
+          <TrainingSetup snapshot={dataset.confirmedSnapshot} setup={training} onRun={(plan) => void startRun(plan)} onCancelStart={run.cancelStart} isStarting={run.isStarting} runBlocked={dataset.isReading || Boolean(run.run && isRunActive(run.run.status))} runError={run.error} />
         </>
       ) : <TrainingDashboard key={run.runId} controller={run} onBack={() => setStep(1)} />}
       <Footer />

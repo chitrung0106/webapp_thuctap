@@ -1,9 +1,20 @@
 from fastapi import APIRouter, HTTPException, Response
-from app.schemas.training import ExportRequest, TrainingRequest
+from app.schemas.training import ExportRequest, TrainingRequest, PredictionRequest
 from app.services.training_runs import capabilities, create_run, get_run, cancel_run
 from app.services.training_export import export_run, preview_export
 
 router = APIRouter(prefix="/training", tags=["training"])
+
+@router.post('/runs/{run_id}/predict')
+def predict_model(run_id: str, body: PredictionRequest):
+    from app.services.model_prediction import predict_saved
+    from app.services.training_runs import run_directory
+    try:
+        return predict_saved(get_run(run_id),run_directory(run_id),body.result_id,body.rows)
+    except (KeyError,FileNotFoundError) as error:
+        raise HTTPException(status_code=404,detail='Model hoặc lượt chạy không còn tồn tại.') from error
+    except ValueError as error:
+        raise HTTPException(status_code=400,detail=str(error)) from error
 
 
 @router.get("/capabilities")

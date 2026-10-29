@@ -28,7 +28,7 @@ test("basic classification batch contains nine models and shared 70/15/15 split"
 
 test("all twelve classification model configurations validate", () => {
   const form = createTrainingForm();
-  form.selected = getModelCatalog("classification").map((model) => model.id);
+  form.selected = getModelCatalog("classification").map((model) => model.id); form.shared.environment = "server";
   assert.equal(buildTrainingPlan(snapshot(), form).jobs.length, 12);
 });
 
@@ -39,7 +39,7 @@ test("regression defaults omit Naive Bayes and use Ridge plus numeric labels", (
   assert.equal(plan.metric, "rmse");
   assert.equal(plan.jobs[0].modelName, "Ridge Regression");
   assert.equal(plan.split.stratify, false);
-  form.selected = getModelCatalog("regression").map((model) => model.id);
+  form.selected = getModelCatalog("regression").map((model) => model.id); form.shared.environment = "server";
   assert.equal(buildTrainingPlan(snapshot(1, "regression"), form).jobs.length, 11);
 });
 
@@ -130,7 +130,7 @@ test("learning controls are sent only to MLP and are validated when selected", (
 test("grouped learning values remain independent and serialize to matching models", () => {
   const data = snapshot();
   const form = createTrainingForm();
-  form.selected = ["mlp", "tree", "forest", "extra_trees", "gradient_boosting", "xgboost", "lightgbm", "catboost"];
+  form.selected = ["mlp", "tree", "forest", "extra_trees", "gradient_boosting", "xgboost", "lightgbm", "catboost"]; form.shared.environment="server";
   form.parameters.mlp.learning_rate_init = "0.002";
   form.parameters.tree.max_depth = "4";
   form.parameters.forest.n_estimators = "12";

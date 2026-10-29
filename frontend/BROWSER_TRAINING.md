@@ -68,3 +68,19 @@ node --test src/utils/__tests__/*.test.mjs
 ```
 
 Báo cáo GPU, flow, screenshots và kiểm tra code tải về lưu trong workspace chat: `outputs/GPU_INTEGRATION_QA_2026-10-29`.
+
+## Các chức năng bổ sung sau rà soát flow
+
+- CSV đọc từng khối 512 KiB trong worker, có tiến độ byte và hủy; không tạo một chuỗi văn bản chứa toàn bộ file trước khi parse. Hủy/đọc lỗi giữ dataset cũ.
+- Có cảnh báo reload/đóng trang khi còn dữ liệu sửa chưa tải hoặc model browser chưa tải. RUN lượt mới hỏi trước khi thay model tạm. Sau khi bắt đầu tải đủ model, cảnh báo model được gỡ; trình duyệt không cung cấp bằng chứng người dùng đã lưu file xuống đĩa thành công.
+- Có nút Dừng hẳn worker cho browser. Thao tác này mất toàn bộ model tạm trong worker, kể cả model đã hoàn thành; dữ liệu đã chỉnh trên giao diện vẫn giữ. Backend chỉ dùng dừng hợp tác như trước.
+- CatBoost bị vô hiệu hóa khi chọn browser; Chọn tất cả chỉ chọn 11 model browser hỗ trợ. GPU được kiểm tra khi người dùng bật tùy chọn, vẫn có CPU fallback nếu bộ train GPU gặp lỗi.
+- Hiển thị tiến độ nạp từng thư viện, có hủy nạp và RUN lại. XGBoost/LightGBM chỉ tải khi được chọn.
+- Tab Thử dự đoán: nhập một dòng hoặc chọn CSV mới có header input; ghép theo tên cột, dùng pipeline đã học, không fit lại. Có tải CSV kết quả. Model không cung cấp xác suất sẽ hiển thị dấu —.
+- Có tải bảng so sánh CSV và báo cáo TXT gồm tất cả model/label và các tập train/validation/test. Không thay đổi các định dạng model export.
+
+### CSV rất lớn
+
+Streaming giải quyết cách đọc và độ phản hồi lúc phân tích, không biến toàn bộ pipeline thành out-of-core. Dataset đã phân tích, bản sửa, snapshot và ma trận train vẫn dùng RAM. Giữ lựa chọn không giới hạn dung lượng file, nhưng không cam kết train được CSV lớn tùy ý.
+
+Nếu cần hỗ trợ tập vượt RAM, phải thiết kế lưu tạm IndexedDB/OPFS và đọc theo trang; đây mới là phần lưu/chỉnh dữ liệu. Huấn luyện ngoài RAM cần thuật toán có incremental/partial_fit hoặc máy chạy có đủ RAM. Tree/Forest/SVM hiện tại không tự trở thành train theo batch. Chưa tự đổi thuật toán, lấy mẫu, bỏ dòng hoặc tự điền dữ liệu để né giới hạn.

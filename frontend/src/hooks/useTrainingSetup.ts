@@ -29,7 +29,7 @@ export function useTrainingSetup(snapshot: DatasetSnapshot | null) {
   }
   function selectModels(mode: "basic" | "all" | "none") {
     setConfirmation(null);
-    setForm((current) => ({ ...current, selected: mode === "none" ? [] : catalog.filter((model) => mode === "all" || !model.extended).map((model) => model.id) }));
+    setForm((current) => ({ ...current, selected: mode === "none" ? [] : catalog.filter((model) => (mode === "all" || !model.extended) && (current.shared.environment==='server'||model.id!=='catboost')).map((model) => model.id) }));
   }
   function setParameter(modelId: string, key: string, value: string | boolean) {
     setConfirmation(null);
