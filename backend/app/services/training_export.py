@@ -157,6 +157,15 @@ def bundle_readme(run, ids, pins, with_code, include_data, example=None, local=F
     location = "thư mục chứa README của model này" if local else "thư mục chứa README tổng này"
     mapping_guide = label_mapping_guide(run["task"], local)
     intro = "BẮT ĐẦU TỪ ĐÂU?\n- Muốn chạy thử trên máy tính: làm theo mục 1 bên dưới.\n- Muốn chạy trên ESP32: xem mục 3 và README trong firmware/.\n- Chỉ cần thử một model; không bắt buộc chạy toàn bộ model trong gói.\n\n"
+    execution_note = ""
+    if run.get("execution") == "browser":
+        execution_note = "NGUỒN MODEL\nModel được train trên thiết bị người dùng trong trình duyệt (Python/WebAssembly).\n"
+        if any(result.get("executionDevice") == "gpu" for result in run["results"]):
+            execution_note += "MLP có ghi executionDevice=gpu được train bằng TensorFlow.js 4.22.0 / WebGPU. Model Joblib chứa đúng trọng số đã học, không train lại khi chạy predict.py. Chạy dự đoán bằng Python không cần TensorFlow.js hoặc GPU.\n"
+        execution_note += "metadata.json và run-summary.json ghi thiết bị/backend thực tế; CPU và GPU có thể cho kết quả khác dù cùng seed.\n\n"
+    intro += execution_note
+    training_python_versions = sorted({result["pythonVersion"] for result in run["results"] if result.get("pythonVersion")})
+    training_python_note = "Python đi kèm lượt train: " + ", ".join(training_python_versions) + "." if training_python_versions else "Lượt train cũ chưa ghi phiên bản Python; xem phiên bản môi trường export và requirements."
     if not with_code:
         return "BẮT ĐẦU TỪ ĐÂU?\n- Gói này chỉ chứa model Joblib, không có chương trình chạy mẫu.\n- Muốn có lệnh chạy sẵn, chọn Gói Python + code mẫu trên web.\n\n" + f'''HƯỚNG DẪN DÙNG GÓI JOBLIB
 Gói này không có predict.py. Muốn có chương trình chạy thử, hãy chọn “Gói Python + code mẫu” trên web.
@@ -234,7 +243,7 @@ Kết quả biến thể được đo trên Test bằng runtime máy tính; xem 
 
 4. PHIÊN BẢN VÀ THÔNG TIN BỔ SUNG
 Python môi trường tạo gói: {python}; khuyến nghị nhánh {minor}.
-Phiên bản Python lúc train chưa được ghi lại. Thư viện lấy từ model đã lưu; nếu lượt cũ thiếu thông tin thì dùng môi trường export.
+{training_python_note} Thư viện lấy từ model đã lưu; nếu lượt cũ thiếu thông tin thì dùng môi trường export.
 Các thư viện cũng được ghi trong requirements.txt để cài bằng một lệnh:
 ''' + '\n'.join(f'{name}=={v}' for name,v in sorted(pins.items())) + f'''
 
@@ -242,7 +251,7 @@ Các thư viện cũng được ghi trong requirements.txt để cài bằng m�
 Một số model, như KNN, lưu dữ liệu suy ra từ train bên trong model; bỏ CSV không loại phần đó.
 Export không train lại. Chỉ nạp Joblib từ nguồn bạn tin cậy vì file có thể thực thi mã Python khi nạp.
 '''
-    return instructions if local else intro + instructions
+    return execution_note + instructions if local else intro + instructions
 
 
 def portable_readme(meta, report):
@@ -316,6 +325,7 @@ def build_export(run_id, options):
         prefix = folder_name + "/"
         files[prefix + "model.joblib"] = (directory / f"{result_id}.joblib").read_bytes()
         metadata = {"runId": run_id, "exportFolder": folder_name, "modelName": result["modelName"], "targetName": result["targetName"], "task": run["task"], "inputColumns": run["inputColumns"], "inputSchema": artifact["input_schema"], "classes": result.get("classes", []), "parameters": result["parameters"], "metrics": result["metrics"], "versions": requirements, "pythonVersion": python, "pythonVersionSource": "export_environment", "trainingPythonVersion": result.get("pythonVersion"), "note": "Pipeline includes fitted preprocessing. Input order matches inputColumns. Classification labels are restored by predict.py."}
+        metadata.update(executionDevice=result.get("executionDevice", "cpu"), executionBackend=result.get("executionBackend", "scikit-learn-native"), gpuName=result.get("gpuName"), gpuFallbackReason=result.get("gpuFallbackReason"), trainerVersion=result.get("trainerVersion"))
         files[prefix + "metadata.json"] = encoded(metadata)
         files[prefix + "requirements.txt"] = ('\n'.join(f'{name}=={v}' for name,v in sorted(requirements.items()))+'\n').encode()
         if options.format == "python_zip":

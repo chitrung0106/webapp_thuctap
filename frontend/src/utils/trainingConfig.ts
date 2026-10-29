@@ -101,7 +101,7 @@ export function buildTrainingPlan(snapshot: DatasetSnapshot, form: TrainingForm)
     split: { trainPercent: Number(shared.trainPercent), validationPercent: Number(shared.validationPercent), testPercent: Number(shared.testPercent), seed: Number(shared.seed), strategy: shared.split, stratify: shared.task === "classification" && shared.split === "random" && snapshot.data.outputColumns.length === 1 && shared.stratify },
     preprocessing: { columns: structuredClone(snapshot.inputPreprocessing), targets: structuredClone(snapshot.labelPreprocessing), fitOn: "train_only" },
     metric: shared.metric,
-    execution: { device: "cpu", concurrentJobs: 1, targetStrategy: "separate" },
+    execution: { environment: shared.environment ?? "browser", device: shared.environment !== "server" && shared.device === "gpu" ? "gpu" : "cpu", concurrentJobs: 1, targetStrategy: "separate" },
     jobs: inspected.selectedModels.flatMap((model) => snapshot.data.outputColumns.map((targetName, targetIndex) => ({
       modelId: model.id, modelName: model.name, targetIndex, targetName,
       parameters: Object.fromEntries(model.fields.filter((field) => isParameterActive(model.id, field, form.parameters[model.id])).map((field) => [field.key, parseParameter(field, form.parameters[model.id][field.key])])),

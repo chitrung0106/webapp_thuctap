@@ -24,6 +24,8 @@ export interface ModelDefinition {
   fields: ParameterField[];
 }
 export interface SharedTrainingConfig {
+  environment?: "browser" | "server";
+  device?: "cpu" | "gpu";
   task: TaskType;
   trainPercent: string;
   validationPercent: string;
@@ -45,6 +47,6 @@ export interface TrainingPlan {
   split: { trainPercent: number; validationPercent: number; testPercent: number; seed: number; strategy: "random" | "ordered"; stratify: boolean };
   preprocessing: { columns: DatasetSnapshot["inputPreprocessing"]; targets: DatasetSnapshot["labelPreprocessing"]; fitOn: "train_only" };
   metric: string;
-  execution: { device: "cpu"; concurrentJobs: 1; targetStrategy: "separate" };
+  execution: { environment?: "browser" | "server"; device: "cpu" | "gpu"; concurrentJobs: 1; targetStrategy: "separate" };
   jobs: { modelId: string; modelName: string; targetIndex: number; targetName: string; parameters: Record<string, string | number | boolean | number[] | null> }[];
 }

@@ -60,6 +60,8 @@ def capabilities():
 
 
 def create_run(request: TrainingRequest):
+    if request.execution.environment != "server" or request.execution.device != "cpu":
+        raise ValueError("Backend hiện chỉ chạy CPU. Chọn Máy chủ/CPU hoặc chạy chế độ trình duyệt trên frontend.")
     if not capabilities()["ready"]:
         raise RuntimeError("Backend thiếu thư viện ML. Chạy python -m pip install -r requirements.txt trong thư mục backend.")
     run_id = str(uuid.uuid4())

@@ -94,7 +94,15 @@ class ModelJob(ApiModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
 
 
+class ExecutionConfig(ApiModel):
+    environment: Literal["browser", "server"] = "server"
+    device: Literal["cpu", "gpu"] = "cpu"
+    concurrent_jobs: Literal[1] = Field(default=1, alias="concurrentJobs")
+    target_strategy: Literal["separate"] = Field(default="separate", alias="targetStrategy")
+
+
 class TrainingRequest(ApiModel):
+    execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     dataset: DatasetSnapshot
     task: Literal["classification", "regression"]
     split: SplitConfig

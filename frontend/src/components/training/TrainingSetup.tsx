@@ -3,6 +3,7 @@ import type { DatasetSnapshot, TrainingPlan } from "../../types/training";
 import type { useTrainingSetup } from "../../hooks/useTrainingSetup";
 import ModelParameterCard from "./ModelParameterCard";
 import TrainingCommonSettings from "./TrainingCommonSettings";
+import TrainingExecutionSettings from "./TrainingExecutionSettings";
 
 interface TrainingSetupProps {
   snapshot: DatasetSnapshot | null;
@@ -33,6 +34,7 @@ export default function TrainingSetup({ snapshot, setup, onRun, isStarting, runB
           </div>
         )}
         {snapshot && <div className="training-preprocessing-summary"><strong>Tiền xử lý đã xác nhận ở bước 01</strong><div>{snapshot.inputPreprocessing.map((column) => <span key={column.columnIndex}>{column.name}: {column.config.kind === "number" ? `Số · ${column.config.scaling}` : `Phân loại · ${column.config.encoding}`}</span>)}{snapshot.labelPreprocessing.map((label) => <span key={`label-${label.columnIndex}`}>{label.name}: {label.task === "classification" ? "LabelEncoder" : "Giữ nguyên số"}</span>)}</div><p>Quay lại dữ liệu nếu cần thay đổi. Encoder và scaler chỉ được học trên tập train.</p></div>}
+        <TrainingExecutionSettings setup={setup} />
         <TrainingCommonSettings setup={setup} targetCount={snapshot?.data.outputColumns.length ?? 0} />
         <section className="training-models" aria-labelledby="model-list-title">
           <div className="training-model-heading">
@@ -56,7 +58,7 @@ export default function TrainingSetup({ snapshot, setup, onRun, isStarting, runB
         </section>
         <section className="training-plan-summary" aria-labelledby="plan-summary-title">
           <h3 id="plan-summary-title">Tổng kết lượt huấn luyện</h3>
-          <p><strong>{inspection.selectedModels.length}</strong> model × <strong>{snapshot?.data.outputColumns.length ?? 0}</strong> label = <strong>{inspection.jobCount}</strong> tác vụ, chạy lần lượt trên CPU.</p>
+          <p><strong>{inspection.selectedModels.length}</strong> model × <strong>{snapshot?.data.outputColumns.length ?? 0}</strong> label = <strong>{inspection.jobCount}</strong> tác vụ, chạy lần lượt {form.shared.environment === "server" ? "trên máy chủ (CPU)" : form.shared.device === "gpu" ? "trên máy của bạn (MLP dùng GPU nếu khả dụng, model khác dùng CPU)" : "trên CPU của máy bạn"}.</p>
           <p className="dataset-local-note">Nếu có nhiều label, mỗi model được huấn luyện riêng cho từng label. Việc chọn model để export sẽ thực hiện sau khi có kết quả.</p>
           {snapshot && inspection.errors.length > 0 && (
             <div className="training-validation-errors" role="status">

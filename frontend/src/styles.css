@@ -694,3 +694,8 @@ td:last-child, th:last-child { width: 130px; }
  .export-download-bar { flex-direction: column; align-items: stretch; }
 }
 @media (max-width: 550px) { .export-variant-choices, .export-firmware-settings { grid-template-columns: 1fr; } }
+
+.training-execution { display: grid; gap: 12px; }
+.training-execution > select { width: min(100%, 520px); padding: 12px; border: 1px solid #aac8e4; background: transparent; color: inherit; }
+.execution-gpu-option { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.execution-gpu-option input { width: 18px; height: 18px; accent-color: #2f75a6; }

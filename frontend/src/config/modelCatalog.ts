@@ -42,7 +42,7 @@ export function getModelCatalog(task: TaskType): ModelDefinition[] {
 export function createTrainingForm(task: TaskType = "classification"): TrainingForm {
   const catalog = getModelCatalog(task);
   return {
-    shared: { task, trainPercent: "70", validationPercent: "15", testPercent: "15", seed: "42", split: "random", stratify: true, metric: task === "classification" ? "accuracy" : "rmse" },
+    shared: { environment: "browser", device: "cpu", task, trainPercent: "70", validationPercent: "15", testPercent: "15", seed: "42", split: "random", stratify: true, metric: task === "classification" ? "accuracy" : "rmse" },
     selected: catalog.filter((model) => !model.extended).map((model) => model.id),
     parameters: Object.fromEntries(catalog.map((model) => [model.id, Object.fromEntries(model.fields.map((field) => [field.key, field.defaultValue]))])),
   };

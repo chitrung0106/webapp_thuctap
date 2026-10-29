@@ -249,3 +249,22 @@ def test_report_overview_distribution_and_binary_by_split(client):
         expected = binary_metrics(confusion_matrix(actual, predicted, labels=[0, 1]).tolist(), encoder.classes_.tolist())
         assert result["binaryMetricsBySplit"][split] == expected
     assert result["binaryMetricsBySplit"]["test"] == result["binaryMetrics"]
+
+@pytest.mark.parametrize('execution', [
+    {'environment': 'server', 'device': 'gpu'},
+    {'environment': 'browser', 'device': 'cpu'},
+])
+def test_backend_rejects_browser_or_gpu_execution(client, execution):
+    request = plan()
+    request['execution'] = execution
+    response = client.post('/api/training/runs', json=request)
+    assert response.status_code == 422
+    assert 'CPU' in response.json()['detail']
+
+
+def test_gpu_execution_configuration_survives_plan_serialization():
+    from app.schemas.training import TrainingRequest
+    request = plan()
+    request['execution'] = {'environment': 'browser', 'device': 'gpu', 'concurrentJobs': 1, 'targetStrategy': 'separate'}
+    restored = TrainingRequest.model_validate(request).model_dump(by_alias=True)
+    assert restored['execution'] == request['execution']

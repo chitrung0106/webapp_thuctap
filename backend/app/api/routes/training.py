@@ -15,6 +15,8 @@ def training_capabilities():
 def start_training(request: TrainingRequest):
     try:
         return create_run(request)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 

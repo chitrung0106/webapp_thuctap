@@ -91,7 +91,7 @@ def test_portable_float_variants_and_generated_cpp(client, tmp_path, task, model
     archive.extractall(tmp_path)
     compiler_python = Path(__file__).resolve().parents[1] / "storage/results/.export-tools/Scripts/python.exe"
     if not compiler_python.exists(): pytest.skip("Optional host C++ verification compiler not installed")
-    environment = {**os.environ, "ZIG_GLOBAL_CACHE_DIR": str(Path(__file__).resolve().parents[1] / "storage/results/.zig-cache")}
+    environment = {**os.environ, "ZIG_GLOBAL_CACHE_DIR": os.environ.get("ZIG_GLOBAL_CACHE_DIR", str(tmp_path / "zig-cache"))}
     folder_name = preview["models"][0]["folder"]
     for variant in ("float32", "float16"):
         folder = tmp_path / f"{folder_name}/portable/{variant}"
@@ -275,3 +275,12 @@ def test_preview_prioritizes_readme_config_and_code_over_bulk_data(monkeypatch):
     assert len(by_path["model/predict.py"]["content"]) > len(by_path["model/samples-0.csv"]["content"])
     assert manifest[-1]["kind"] == "binary"
     assert sum(len(entry["content"].encode()) for entry in manifest if entry["content"]) <= 512 * 1024
+
+@pytest.mark.parametrize('local', [False, True])
+def test_browser_gpu_readme_explains_training_and_python(local):
+    from app.services.training_export import bundle_readme
+    run = {'execution':'browser', 'task':'classification', 'inputColumns':['sensor'], 'outputColumns':['label'], 'results':[{'executionDevice':'gpu', 'pythonVersion':'3.14.2'}]}
+    text = bundle_readme(run, ['mlp'], {'numpy':'2.4.6'}, True, False, local=local)
+    assert 'WebGPU' in text
+    assert 'không cần TensorFlow.js' in text
+    assert 'Python đi kèm lượt train: 3.14.2.' in text

@@ -2,6 +2,10 @@ export type RunStatus = "queued" | "running" | "cancelling" | "completed" | "can
 export type ResultStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
 export interface LossPoint { step: number; trainLoss: number; validationLoss: number; trainAccuracy?: number; validationAccuracy?: number; }
 export interface ModelResult {
+  executionDevice?: "cpu" | "gpu";
+  executionBackend?: string;
+  gpuName?: string;
+  gpuFallbackReason?: string;
   id: string;
   modelId: string;
   modelName: string;
