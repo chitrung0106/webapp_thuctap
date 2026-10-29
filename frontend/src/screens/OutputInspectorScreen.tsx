@@ -5,7 +5,6 @@ import {hasUnsavedBrowserModels} from '../services/trainingApi';
 import TrainingDashboard from "../components/results/TrainingDashboard";
 import { useTrainingSetup } from "../hooks/useTrainingSetup";
 import { useTrainingRun } from "../hooks/useTrainingRun";
-import Header from "../components/layout/Header";
 import Footer from "../components/layout/Footer";
 import DatasetEditor from "../components/data/DatasetEditor";
 import DataUploadPanel from "../components/data/DataUploadPanel";
@@ -36,7 +35,6 @@ export default function OutputInspectorScreen() {
 
   return (
     <main className="workspace">
-      <Header />
       <section className="intro" id="top">
         <p className="eyebrow">MACHINE LEARNING WORKSPACE / BƯỚC 0{activeStep}</p>
         <h1 ref={headingRef} tabIndex={-1}>
