@@ -7,6 +7,7 @@ const STORAGE_KEY = "output-inspector:last-training-run";
 function storedRun() { try { return localStorage.getItem(STORAGE_KEY); } catch { return null; } }
 
 export function useTrainingRun() {
+  const [predictionConfig, setPredictionConfig] = useState<TrainingPlan["preprocessing"]["columns"]>();
   const [runId, setRunId] = useState<string | null>(storedRun);
   const [run, setRun] = useState<TrainingRun | null>(null);
   const [error, setError] = useState("");
@@ -44,6 +45,7 @@ export function useTrainingRun() {
     try {
       const started = await startTraining(plan);
       if(version!==attempt.current)return false;
+      setPredictionConfig(structuredClone(plan.preprocessing.columns));
       setRun(started); setRunId(started.id);
       try { localStorage.setItem(STORAGE_KEY, started.id); } catch { /* optional persistence */ }
       return true;
@@ -66,5 +68,5 @@ export function useTrainingRun() {
     setRunId(null); setRun(null); setError("");
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* optional persistence */ }
   }
-  return { runId, run, error, isStarting, isCancelling, start, cancel, forceStop, cancelStart, forgetRun };
+  return { predictionConfig, runId, run, error, isStarting, isCancelling, start, cancel, forceStop, cancelStart, forgetRun };
 }

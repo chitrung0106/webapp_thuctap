@@ -4,17 +4,18 @@ import HelpNote from "../common/HelpNote";
 interface LabelPreprocessingSettingsProps { dataset: ReturnType<typeof useDataset>; }
 
 export default function LabelPreprocessingSettings({ dataset }: LabelPreprocessingSettingsProps) {
-  const { columns, roles, rows, excludedRows, labelPreprocessing, updateLabelPreprocessing } = dataset;
+  const { columns, roles, rows, excludedRows, labelPreprocessing, updateLabelPreprocessing, preprocessingErrors } = dataset;
   return (
     <section className="label-preprocessing" aria-labelledby="label-processing-title">
-      <div className="dataset-processing-heading"><div><h3 id="label-processing-title">Cách xử lý cột label</h3><p>Chọn loại bài toán cho từng cột label. Hệ thống chỉ kiểm tra dữ liệu có khớp lựa chọn của bạn, không tự chọn hoặc tự đổi loại.</p></div></div>
+      <div className="dataset-processing-heading"><div><h3 id="label-processing-title">Cách xử lý cột label</h3></div></div>
       <div className="column-processing-grid">
         {columns.map((name, index) => {
           if (roles[index] !== "output") return null;
           const task = labelPreprocessing[index]?.task ?? "unset";
           const values = [...new Set(rows.filter((row) => !excludedRows.has(row.id)).map((row) => row.values[index]).filter((value) => value.trim()))];
+          const errors = preprocessingErrors.filter((error) => error.startsWith(`Label ${name}:`) || error.startsWith("Các label trong cùng lượt"));
           return (
-            <article className="column-processing-card label-processing-card" key={index}>
+            <article className={`column-processing-card label-processing-card ${errors.length ? "is-incomplete" : "is-complete"}`} key={index}>
               <div className="column-processing-title"><strong>{name}</strong><span>Cột {index + 1} · Label</span></div>
               <p className="column-value-examples">Giá trị mẫu: {values.slice(0, 4).map((value) => JSON.stringify(value)).join(" · ") || "Chưa có"}</p>
               <div className="training-field">
@@ -37,6 +38,7 @@ export default function LabelPreprocessingSettings({ dataset }: LabelPreprocessi
                 <p>Ví dụ: dự đoán nhiệt độ 25.5 hoặc giá tiền 100000. Giá trị và đơn vị của label được giữ nguyên.</p>
                 <p>Ô không phải số được tô màu để bạn sửa hoặc loại dòng. Không đổi các giá trị số thành mã lớp 0, 1, 2...</p>
               </div>}
+              {errors.length > 0 && <ul className="column-config-notes">{errors.map((error) => <li key={error}>{error}</li>)}</ul>}
             </article>
           );
         })}

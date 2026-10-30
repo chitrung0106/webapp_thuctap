@@ -17,8 +17,9 @@ export default function DatasetPreprocessing({ dataset }: DatasetPreprocessingPr
           const config = preprocessing[index];
           if (!config) return null;
           const examples = [...new Set(rows.filter((row) => !excludedRows.has(row.id)).map((row) => row.values[index]).filter((value) => value.trim()))].slice(0, 4);
+          const errors = preprocessingErrors.filter((error) => error.startsWith(`Cột ${index + 1} (`));
           return (
-            <article className="column-processing-card" key={index}>
+            <article className={`column-processing-card ${errors.length ? "is-incomplete" : "is-complete"}`} key={index}>
               <div className="column-processing-title"><strong>{name}</strong><span>Cột {index + 1} · Input</span></div>
               <p className="column-value-examples">Giá trị mẫu: {examples.map((value) => JSON.stringify(value)).join(" · ") || "Chưa có"}</p>
               <div className="training-field">
@@ -51,13 +52,13 @@ export default function DatasetPreprocessing({ dataset }: DatasetPreprocessingPr
                   </>}
                 </div>
               )}
+              {errors.length > 0 && <ul className="column-config-notes">{errors.map((error) => <li key={error}>{error.slice(error.indexOf(":") + 1).trim()}</li>)}</ul>}
             </article>
           );
         })}
       </div>
       <InputPreprocessingHelp />
       <LabelPreprocessingSettings dataset={dataset} />
-      {preprocessingErrors.length > 0 && <div className="dataset-processing-errors" role="status"><strong>Cần hoàn tất:</strong><ul>{preprocessingErrors.map((error) => <li key={error}>{error}</li>)}</ul></div>}
       <p className="dataset-local-note">Đây là cấu hình xử lý, chưa biến đổi dữ liệu gốc hay CSV tải về. Khi train, encoder/scaler chỉ học từ tập train và được dùng lại cho validation, test và dữ liệu mới. Văn bản tự do cần pipeline riêng.</p>
     </section>
   );

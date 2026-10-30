@@ -13,6 +13,8 @@ export async function gpuCapability() {
 export async function trainGpu(data, cancelled, onEpoch) {
   const capability=await gpuCapability();
   if(!capability.available) throw Error(capability.reason);
+  // Prefer a discrete/high-performance GPU; the browser/OS makes the final selection.
+  tf.env().set('WEBGPU_USE_LOW_POWER_GPU', false);
   if(!await tf.setBackend('webgpu')) throw Error('Không khởi tạo được backend WebGPU.');
   await tf.ready();
   // Never let an unimplemented WebGPU training kernel silently use tfjs CPU.

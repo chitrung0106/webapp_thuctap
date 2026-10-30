@@ -22,12 +22,12 @@ export default function DatasetConfirmation({
       <p className="eyebrow">KIỂM TRA TRƯỚC KHI HUẤN LUYỆN / CÓ GIÁM SÁT</p>
       <h3 id="confirmation-title">Xác nhận dữ liệu và cột đã chọn</h3>
       <dl className="dataset-confirmation-summary">
-        <div><dt>Input</dt><dd>{inputColumns.join(" · ") || "Chưa chọn"}</dd></div>
-        <div><dt>Label (output)</dt><dd>{outputColumns.join(" · ") || "Chưa chọn"}</dd></div>
-        <div><dt>Tiền xử lý input</dt><dd>{preprocessingSummary.join("; ")}</dd></div>
-        <div><dt>Xử lý label</dt><dd>{labelProcessingSummary.join("; ")}</dd></div>
+        <div className={!inputColumns.length ? "is-pending" : ""}><dt>Input</dt><dd>{inputColumns.join(" · ") || "Chưa chọn"}</dd></div>
+        <div className={!outputColumns.length ? "is-pending" : ""}><dt>Label (output)</dt><dd>{outputColumns.join(" · ") || "Chưa chọn"}</dd></div>
+        <div><dt>Tiền xử lý input</dt><dd>{preprocessingSummary.length ? preprocessingSummary.map((item, index) => <span key={index} className={item.includes("Chưa chọn") ? "is-pending" : ""}>{index > 0 && "; "}{item}</span>) : <span className="is-pending">Chưa chọn input</span>}</dd></div>
+        <div><dt>Xử lý label</dt><dd>{labelProcessingSummary.length ? labelProcessingSummary.map((item, index) => <span key={index} className={item.includes("Chưa chọn") ? "is-pending" : ""}>{index > 0 && "; "}{item}</span>) : <span className="is-pending">Chưa chọn label</span>}</dd></div>
         <div><dt>Dòng giữ lại / loại bỏ</dt><dd>{includedCount} / {excludedCount}</dd></div>
-        <div><dt>Dòng giữ lại còn lỗi</dt><dd>{invalidCount}</dd></div>
+        <div className={invalidCount > 0 ? "has-errors" : ""}><dt>Dòng giữ lại còn lỗi</dt><dd>{invalidCount}</dd></div>
       </dl>
       <label className="dataset-header-toggle">
         <input type="checkbox" checked={columnsConfirmed} onChange={(event) => onColumnsConfirmed(event.target.checked)} />

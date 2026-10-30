@@ -1,3 +1,10 @@
-import test from'node:test';import assert from'node:assert/strict';import{parseCsv}from'../csv.ts';import{predictionRows}from'../predictionInput.ts';
-test('prediction CSV maps trimmed header names in training order without changing values',()=>{const doc=parseCsv('unused, y , x\nlabel,60,-15\nother,65,30');assert.deepEqual(predictionRows(doc,['x','y']),[['-15','60'],['30','65']]);});
-test('prediction CSV rejects missing or ambiguous input headers and header-only files',()=>{for(const source of ['x,z\n1,2','x,x,y\n1,2,3','x,y'])assert.throws(()=>predictionRows(parseCsv(source),['x','y']));});
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {parseCsv} from '../csv.ts';
+import {predictionRows} from '../predictionInput.ts';
+const config = [ {name:'x',config:{kind:'number'}}, {name:'y',config:{kind:'category',encoding:'onehot'}} ];
+test('prediction maps reordered trimmed headers and preserves raw values',()=>assert.deepEqual(predictionRows(parseCsv(' y , x\nnormal,-15\n1,3e2'),['x','y'],config),[['-15','normal'],['3e2','1']]));
+test('rejects extra, missing, duplicate, incorrect headers and header-only CSV',()=>{for(const source of ['extra,x,y\na,1,2','x\n1','x,x\n1,2','x,z\n1,2','x,y'])assert.throws(()=>predictionRows(parseCsv(source),['x','y'],config));});
+test('rejects blank cells and invalid numeric values with original CSV line and column',()=>{for(const value of ['abc','NaN','Infinity','1e999','0x10',' '])assert.throws(()=>predictionRows(parseCsv(`x,y\n${value},ok`),['x','y'],config),/Dòng 2, cột “x”/);assert.throws(()=>predictionRows(parseCsv('x,y\n1,'),['x','y'],config),/thiếu dữ liệu/);});
+test('ordinal requires declared groups; category numeric codes remain valid',()=>{const cfg=[{name:'x',config:{kind:'category',encoding:'ordinal',categoryOrder:['0','1']}}];assert.deepEqual(predictionRows(parseCsv('x\n0'),['x'],cfg),[['0']]);assert.throws(()=>predictionRows(parseCsv('x\n2'),['x'],cfg),/Ordinal/);});
+test('incomplete schema is rejected and error list is bounded',()=>{assert.throws(()=>predictionRows(parseCsv('x,y\n1,a'),['x','y'],[]),/Thiếu cấu hình/);assert.throws(()=>predictionRows(parseCsv('x,y\n'+Array(8).fill('bad,ok').join('\n')),['x','y'],config),/8 ô.*5 lỗi đầu/);});

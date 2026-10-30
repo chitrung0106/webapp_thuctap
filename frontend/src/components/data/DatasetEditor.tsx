@@ -1,8 +1,6 @@
 import DatasetPreprocessing from "./DatasetPreprocessing";
-import HelpNote from "../common/HelpNote";
 import { useState } from "react";
 import type { useDataset } from "../../hooks/useDataset";
-import { formatBytes } from "../../utils/formatBytes";
 import DatasetConfirmation from "./DatasetConfirmation";
 import DatasetChanges from "./DatasetChanges";
 import DatasetTable from "./DatasetTable";
@@ -22,7 +20,7 @@ export default function DatasetEditor({ dataset, onContinue }: DatasetEditorProp
   const {
     inputFile, document, error, isReading, updateFile, hasHeader, setHasHeader,
     columns, rows, roles, updateRole, excludedRows, toggleExcluded, updateCell,
-    includedCount, missingCount, trainingData, validation, preprocessingErrors,
+    includedCount, trainingData, validation, preprocessingErrors,
     columnsConfirmed, setColumnsConfirmed, confirmedSnapshot, confirmDataset,
     changes, hasDataChanges, restoreData, downloadProcessedCsv,
   } = dataset;
@@ -41,7 +39,6 @@ export default function DatasetEditor({ dataset, onContinue }: DatasetEditorProp
   const pageRows = filteredRows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const inputCount = roles.filter((role) => role === "input").length;
   const outputCount = roles.filter((role) => role === "output").length;
-  const delimiterName = document.delimiter === "\t" ? "tab" : document.delimiter === ";" ? "chấm phẩy" : "phẩy";
 
   return (
     <section className="upload-panel dataset-editor" aria-labelledby="dataset-title" aria-busy={isReading}>
@@ -56,7 +53,6 @@ export default function DatasetEditor({ dataset, onContinue }: DatasetEditorProp
             aria-label="Đổi tệp CSV" />
         </label>
       </div>
-      <p className="data-file-info">{inputFile.name} · {formatBytes(inputFile.size)} · Dấu phân cách: {delimiterName}</p>
       {error && <p className="error-message" role="alert">{error} Dữ liệu trước đó vẫn được giữ lại.</p>}
       {isReading && <CsvReadProgress percent={dataset.readProgress} onCancel={dataset.cancelRead}/>}
 
@@ -67,23 +63,21 @@ export default function DatasetEditor({ dataset, onContinue }: DatasetEditorProp
             <input type="checkbox" checked={hasHeader} onChange={(event) => { setHasHeader(event.target.checked); setPage(1); }} />
             Dòng đầu là tên cột
           </label>
-          <span className="file-limit">{inputCount} cột input · {outputCount} cột output</span>
+          <span className="file-limit">{inputCount} cột input · {outputCount} cột label</span>
         </div>
-        <HelpNote title="Input, label và Không dùng là gì?">
-          <p>Input là thông tin model được nhìn thấy. Label là đáp án bạn muốn model học để dự đoán.</p>
-          <p className="help-example">Ví dụ dự đoán thiết bị có lỗi không: nhiệt độ và độ ẩm là input; trạng thái bình thường/lỗi là label.</p>
-          <p>Không dùng nghĩa là bỏ cột khỏi dữ liệu đưa vào model. Tick Bỏ dòng thì bỏ cả dòng khỏi train. Cột Không dùng vẫn có trong CSV đã xử lý khi tải về.</p>
-        </HelpNote>
-        <p className="dataset-help">Chọn Input hoặc Output ở đầu mỗi cột. Bấm vào ô để sửa. Tick “Bỏ dòng” để loại dòng khỏi dữ liệu huấn luyện.</p>
-        <p className="dataset-local-note">Chọn cách xử lý cho từng cột input bên dưới. Dữ liệu gốc được giữ nguyên; phép biến đổi sẽ thực hiện khi train.</p>
         {document.paddedRows > 0 && <p className="dataset-notice">Có {document.paddedRows} dòng thiếu ô ở cuối; các ô đó được hiển thị trống để bạn kiểm tra.</p>}
         <div className="dataset-stats" role="status" aria-live="polite">
           <span><strong>{rows.length}</strong> dòng dữ liệu</span>
           <span><strong>{includedCount}</strong> dòng giữ lại</span>
           <span><strong>{rows.length - includedCount}</strong> dòng đã bỏ</span>
-          <span className={missingCount > 0 ? "dataset-warning" : ""}><strong>{missingCount}</strong> dòng giữ lại thiếu label</span>
         </div>
-        <p className="dataset-validation-counts" role="status">Dòng giữ lại: {validation.invalidLabelCount} label sai định dạng · {validation.missingInputCount} thiếu input · {validation.invalidInputCount} input không đúng cấu hình · {validation.invalidIncludedCount} dòng lỗi tổng cộng.</p>
+        <div className="dataset-validation-counts" role="status" aria-live="polite">
+          <strong className={validation.invalidIncludedCount > 0 ? "has-errors" : ""}>{validation.invalidIncludedCount} dòng lỗi tổng cộng</strong>
+          {validation.missingOutputCount > 0 && <span>{validation.missingOutputCount} dòng thiếu label</span>}
+          {validation.invalidLabelCount > 0 && <span>{validation.invalidLabelCount} dòng label sai định dạng</span>}
+          {validation.missingInputCount > 0 && <span>{validation.missingInputCount} dòng thiếu input</span>}
+          {validation.invalidInputCount > 0 && <span>{validation.invalidInputCount} dòng input không đúng cấu hình</span>}
+        </div>
 
         <div className="dataset-filter">
           <label htmlFor="dataset-filter">Hiển thị dòng</label>
