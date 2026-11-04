@@ -84,3 +84,23 @@ Báo cáo GPU, flow, screenshots và kiểm tra code tải về lưu trong works
 Streaming giải quyết cách đọc và độ phản hồi lúc phân tích, không biến toàn bộ pipeline thành out-of-core. Dataset đã phân tích, bản sửa, snapshot và ma trận train vẫn dùng RAM. Giữ lựa chọn không giới hạn dung lượng file, nhưng không cam kết train được CSV lớn tùy ý.
 
 Nếu cần hỗ trợ tập vượt RAM, phải thiết kế lưu tạm IndexedDB/OPFS và đọc theo trang; đây mới là phần lưu/chỉnh dữ liệu. Huấn luyện ngoài RAM cần thuật toán có incremental/partial_fit hoặc máy chạy có đủ RAM. Tree/Forest/SVM hiện tại không tự trở thành train theo batch. Chưa tự đổi thuật toán, lấy mẫu, bỏ dòng hoặc tự điền dữ liệu để né giới hạn.
+
+
+## Bộ nhớ và kho dữ liệu trên máy người dùng (2026-11-04)
+
+- CSV được parser trong worker đọc từng 64 KiB, ghi IndexedDB theo khối tối đa 256 dòng hoặc khoảng 512 KiB. Một bản ghi tối đa 256 KiB ký tự; tối đa 2048 cột để tránh một bản ghi bất thường làm tràn bộ nhớ.
+- Bảng lấy 50 dòng/trang; tải trước trang tiếp theo, bộ đệm chỉ giữ trang hiện tại và trang kế. Chỉ mục số dòng theo từng khối cho phép nhảy trang không đọc CSV từ đầu.
+- Chỉnh sửa và loại dòng ghi trong kho `data-to-model-datasets-v1` (stores meta/blocks/edits). Gốc và chỉnh sửa tách nhau. Quét thống kê/lỗi theo từng khối, chỉ trả số đếm, vài mẫu và lỗi cấu hình. Giới hạn danh sách nhóm 10000 nhóm/cột và 16 MiB tổng tên nhóm.
+- Tải lại trang khôi phục bộ dữ liệu gần nhất và cấu hình từ kho. Model train vẫn chỉ nằm trong worker RAM, cần tải model về. Kho có thể bị trình duyệt thu hồi; xóa dữ liệu website/chế độ riêng tư có thể mất dữ liệu. CSV gốc không bị sửa. Không gửi CSV lên server.
+- Nhập lỗi/hủy sẽ xóa bản nhập dở, giữ bộ trước. Thay file thành công mới xóa bộ cũ. Kho thiếu dung lượng báo lỗi rõ, không lặng lẽ chuyển sang RAM.
+- CSV đã xử lý được ghi tuần tự sang file OPFS rồi tải bằng File handle, không ghép một chuỗi/Blob đầy đủ trong RAM. File tạm xóa sau khi bắt đầu tải.
+
+### Huấn luyện hiện tại vẫn cần toàn bộ dữ liệu
+
+Không có học ngoài RAM/huấn luyện trực tiếp từ ổ đĩa trong đợt này. Trước khi tạo snapshot tại bước 1, worker ước lượng dữ liệu chuỗi, bản sao và ma trận sau One-hot; vượt ngân sách 128 MiB thì chặn trước khi tạo mảng đầy đủ. Dữ liệu vẫn có thể xem/sửa/tải CSV. Đây là ngân sách bảo thủ của ứng dụng, không phải dung lượng RAM thực tế đo được và không đảm bảo tránh mọi lỗi OOM.
+
+Python kiểm tra lần nữa trước mỗi model, thêm chi phí theo số cây/độ sâu, kernel SVM, khoảng cách KNN, tầng/neuron MLP và artifact của model trước. Model vượt ngân sách hiển thị failed kèm lý do, model nhỏ tiếp tục. Không tự lấy mẫu/bỏ cột. Người dùng tự giảm dữ liệu/cấu hình hoặc dùng thiết bị khác.
+
+Các model chạy lần lượt, n_jobs=1 khi có; artifact ghi xong bỏ tham chiếu tạm và gọi garbage collector. WASM có thể giữ vùng heap đã cấp phát để tái sử dụng, nên bộ nhớ tiến trình không nhất thiết giảm ngay sau gc.
+
+GPU bật chỉ cho MLP. Không có GPU hoặc lỗi GPU/VRAM thì dừng model và báo lỗi, không tự chuyển CPU, không tự thử lại. Tensor/optimizer/weights được dọn cả khi lỗi ở bước cấp phát. Dừng hẳn worker vẫn dùng được; dữ liệu trên ổ đĩa không bị xóa.

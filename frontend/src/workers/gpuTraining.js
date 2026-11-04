@@ -23,6 +23,9 @@ export async function trainGpu(data, cancelled, onEpoch) {
   const activation={logistic:'sigmoid',identity:'linear'}[p.activation] || p.activation;
   const units=classification?(binary?1:data.classCount):1;
   const model=tf.sequential();
+  let optimizer; const owned=[]; let bestWeights=null;
+  // Cover allocation failures too, not just errors inside the epoch loop.
+  try {
   let seed=data.seed;
   for(const [i,size] of [...p.hidden_layer_sizes,units].entries()) model.add(tf.layers.dense({
     units:size,...(i===0?{inputShape:[data.trainX[0].length]}:{}),
@@ -30,13 +33,12 @@ export async function trainGpu(data, cancelled, onEpoch) {
     kernelInitializer:tf.initializers.glorotUniform({seed:seed+i}),biasInitializer:'zeros',
     kernelRegularizer:p.alpha?tf.regularizers.l2({l2:p.alpha/(2*data.trainX.length)}):undefined,
   }));
-  const optimizer=p.solver==='sgd'?tf.train.momentum(p.learning_rate_init,0.9,true):tf.train.adam(p.learning_rate_init);
+  optimizer=p.solver==='sgd'?tf.train.momentum(p.learning_rate_init,0.9,true):tf.train.adam(p.learning_rate_init);
   model.compile({optimizer,loss:classification?(binary?'binaryCrossentropy':'categoricalCrossentropy'):'meanSquaredError'});
-  const owned=[];
   function tensor(rows){const t=tf.tensor2d(rows);owned.push(t);return t;}
   function labels(rows){const t=tf.tidy(()=>classification&&!binary?tf.oneHot(tf.tensor1d(rows,'int32'),data.classCount):tf.tensor2d(rows,[rows.length,1]));owned.push(t);return t;}
   const trainX=tensor(data.trainX),trainY=labels(data.trainY),validationX=tensor(data.validationX),validationY=labels(data.validationY),monitorX=tensor(data.monitorX),monitorY=labels(data.monitorY);
-  const history=[];let bestWeights=null,bestLoss=Infinity,patience=0,bestEpoch=0;
+  const history=[];let bestLoss=Infinity,patience=0,bestEpoch=0;
   // Seeded shuffle independent of browser Math.random; model comparisons still
   // use the exact same train/validation/test indices prepared in Python.
   function random(){seed=(seed+0x6D2B79F5)|0;let t=Math.imul(seed^(seed>>>15),1|seed);t^=t+Math.imul(t^(t>>>7),61|t);return((t^(t>>>14))>>>0)/4294967296;}
@@ -52,7 +54,6 @@ export async function trainGpu(data, cancelled, onEpoch) {
       return {loss:loss/x.shape[0],accuracy:correct/x.shape[0]};
     } finally{pred.dispose();}
   }
-  try {
     for(let epoch=0;epoch<p.max_iter;epoch++){
       if(cancelled())throw Error('TRAINING_CANCELLED');
       const order=Array.from({length:trainX.shape[0]},(_,i)=>i);
@@ -76,8 +77,8 @@ export async function trainGpu(data, cancelled, onEpoch) {
     const weights=await Promise.all(model.getWeights().map(async t=>({shape:t.shape,values:Array.from(await t.data())})));
     return {weights,history,backend:'webgpu',gpu:capability.name,bestEpoch:bestEpoch||history.length};
   } finally {
-    bestWeights?.forEach(w=>w.dispose());owned.forEach(t=>t.dispose());model.dispose();optimizer.dispose();
+    bestWeights?.forEach(w=>w.dispose());owned.forEach(t=>t.dispose());model.dispose();optimizer?.dispose();
     // tfjs 4.22 MomentumOptimizer.dispose() omits its SGD base-class scalar.
-    if(p.solver==='sgd')tf.SGDOptimizer.prototype.dispose.call(optimizer);
+    if(optimizer && data.parameters.solver==='sgd')tf.SGDOptimizer.prototype.dispose.call(optimizer);
   }
 }

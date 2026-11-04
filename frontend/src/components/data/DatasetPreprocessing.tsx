@@ -7,7 +7,7 @@ interface DatasetPreprocessingProps {
 }
 
 export default function DatasetPreprocessing({ dataset }: DatasetPreprocessingProps) {
-  const { columns, roles, rows, preprocessing, updatePreprocessing, excludedRows, preprocessingErrors } = dataset;
+  const { columns, roles, preprocessing, updatePreprocessing, preprocessingErrors } = dataset;
   return (
     <section className="dataset-preprocessing" aria-labelledby="column-processing-title">
       <div className="dataset-processing-heading"><div><h3 id="column-processing-title">Cách xử lý từng cột input</h3><p>Chọn Số cho các đại lượng có ý nghĩa lớn nhỏ, Phân loại cho tên hoặc mã nhóm.</p></div><span className="file-limit">CẤU HÌNH TRƯỚC KHI TRAIN</span></div>
@@ -16,7 +16,7 @@ export default function DatasetPreprocessing({ dataset }: DatasetPreprocessingPr
           if (roles[index] !== "input") return null;
           const config = preprocessing[index];
           if (!config) return null;
-          const examples = [...new Set(rows.filter((row) => !excludedRows.has(row.id)).map((row) => row.values[index]).filter((value) => value.trim()))].slice(0, 4);
+          const examples = dataset.columnSamples[index] ?? [];
           const errors = preprocessingErrors.filter((error) => error.startsWith(`Cột ${index + 1} (`));
           return (
             <article className={`column-processing-card ${errors.length ? "is-incomplete" : "is-complete"}`} key={index}>

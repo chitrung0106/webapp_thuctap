@@ -1,164 +1,51 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import {readCsv} from '../services/readCsv';
-import type { ColumnPreprocessing, ColumnRole, CsvDocument, LabelPreprocessing } from "../types/dataset";
-import { createTrainingSnapshot, prepareTrainingData, serializeProcessedCsv } from "../utils/csv";
-import { summarizeChanges } from "../utils/datasetChanges";
-import { createColumnPreprocessing, getLabelPreprocessingErrors, getPreprocessingErrors, validateDataset } from "../utils/datasetValidation";
-import { downloadFile } from "../utils/downloadFile";
-
-type TrainingSnapshot = ReturnType<typeof createTrainingSnapshot>;
-
-export function useDataset() {
-  const [inputFile, setInputFile] = useState<File | null>(null);
-  const [document, setDocument] = useState<CsvDocument | null>(null);
-  const [originalDocument, setOriginalDocument] = useState<CsvDocument | null>(null);
-  const [error, setError] = useState("");
-  const [isReading, setIsReading] = useState(false);
-  const [hasHeader, updateHasHeader] = useState(false);
-  const [roles, setRoles] = useState<ColumnRole[]>([]);
-  const [preprocessing, setPreprocessing] = useState<ColumnPreprocessing[]>([]);
-  const [labelPreprocessing, setLabelPreprocessing] = useState<LabelPreprocessing[]>([]);
-  const [excludedRows, setExcludedRows] = useState<Set<number>>(new Set());
-  const [loadId, setLoadId] = useState(0);
-  const [columnsConfirmed, updateColumnsConfirmed] = useState(false);
-  const [confirmedSnapshot, setConfirmedSnapshot] = useState<TrainingSnapshot | null>(null);
-  const readVersion = useRef(0);
-  const readController=useRef<AbortController|null>(null);
-  const [readProgress,setReadProgress]=useState(0);
-  useEffect(()=>()=>readController.current?.abort(),[]);
-  function cancelRead(){readVersion.current++;readController.current?.abort();setIsReading(false);setError('');}
-
-  function invalidateConfirmation() {
-    updateColumnsConfirmed(false);
-    setConfirmedSnapshot(null);
-  }
-
-  async function updateFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    if(document&&!window.confirm('Đổi tệp sẽ thay dữ liệu và cấu hình cột hiện tại. Bạn đã tải CSV chỉnh sửa cần giữ chưa?'))return;
-    readController.current?.abort();
-    const version = ++readVersion.current;
-    setError("");
-    setIsReading(false);
-    if (!/\.csv$/i.test(file.name)) {
-      setError("Vui lòng chọn tệp .csv. Tệp chưa được nhận vào dữ liệu huấn luyện.");
-      return;
-    }
-    setIsReading(true);
-    setReadProgress(0);
-    const controller=new AbortController();readController.current=controller;
-    try {
-      const parsed=await readCsv(file,setReadProgress,controller.signal);
-      if (version !== readVersion.current) return;
-      if (parsed.columnCount < 2) throw new Error("Cần ít nhất 2 cột để chọn riêng input và label. Hỗ trợ dấu phẩy, chấm phẩy hoặc tab.");
-      setLoadId((current) => current + 1);
-      setInputFile(file);
-      setDocument(parsed);
-      setOriginalDocument(parsed);
-      updateHasHeader(false);
-      setRoles(Array.from({ length: parsed.columnCount }, (_, index): ColumnRole => index === parsed.columnCount - 1 ? "output" : "input"));
-      setPreprocessing(createColumnPreprocessing(parsed.columnCount));
-      setLabelPreprocessing(Array.from({ length: parsed.columnCount }, () => ({ task: "unset" })));
-      setExcludedRows(new Set());
-      invalidateConfirmation();
-    } catch (readError) {
-      if (version === readVersion.current && !(readError instanceof DOMException && readError.name==='AbortError')) setError(readError instanceof Error ? readError.message : "Không thể đọc tệp CSV.");
-    } finally {
-      if (version === readVersion.current) setIsReading(false);
-    }
-  }
-
-  const columns = useMemo(() => Array.from({ length: document?.columnCount ?? 0 }, (_, index) =>
-    hasHeader ? document!.rows[0].values[index].trim() || `Cột ${index + 1}` : `Cột ${index + 1}`,
-  ), [document, hasHeader]);
-  const rows = useMemo(() => document ? (hasHeader ? document.rows.slice(1) : document.rows) : [], [document, hasHeader]);
-  const includedCount = rows.filter((row) => !excludedRows.has(row.id)).length;
-  const validation = useMemo(() => validateDataset(rows, roles, excludedRows, preprocessing, labelPreprocessing), [rows, roles, excludedRows, preprocessing, labelPreprocessing]);
-  const trainingData = useMemo(() => {
-    try { return prepareTrainingData(rows, columns, roles, excludedRows, preprocessing, labelPreprocessing); }
-    catch { return null; }
-  }, [rows, columns, roles, excludedRows, preprocessing, labelPreprocessing]);
-  const changes = useMemo(() => summarizeChanges(originalDocument?.rows ?? [], document?.rows ?? []), [originalDocument, document]);
-  const hasDataChanges = changes.cellCount > 0 || rows.some((row) => excludedRows.has(row.id));
-  const [downloadedData,setDownloadedData]=useState<{document:CsvDocument;excluded:string}|null>(null);
-  const exclusionKey=[...excludedRows].sort((a,b)=>a-b).join(',');
-  const hasUnsavedDataChanges=hasDataChanges && (downloadedData?.document!==document || downloadedData.excluded!==exclusionKey);
-
-  function restoreData() {
-    setDocument(originalDocument);
-    setExcludedRows(new Set());
-    invalidateConfirmation();
-  }
-  function setHasHeader(value: boolean) {
-    if (value === hasHeader) return;
-    updateHasHeader(value);
-    invalidateConfirmation();
-  }
-  function downloadProcessedCsv() {
-    if (!document || !inputFile || !includedCount || !hasDataChanges) return;
-    const csv = serializeProcessedCsv(document, hasHeader, excludedRows);
-    downloadFile(new Blob([csv], { type: "text/csv;charset=utf-8" }), inputFile.name.replace(/\.csv$/i, "") + "-processed.csv");
-    setDownloadedData({document,excluded:exclusionKey});
-  }
-  function confirmDataset() {
-    if (!document || !inputFile || !columnsConfirmed || isReading) return false;
-    try {
-      const snapshot = createTrainingSnapshot(document, hasHeader, columns, roles, excludedRows, inputFile.name, preprocessing, labelPreprocessing);
-      setConfirmedSnapshot(snapshot);
-      return true;
-    } catch (confirmationError) {
-      setError(confirmationError instanceof Error ? confirmationError.message : "Chưa thể xác nhận dữ liệu.");
-      return false;
-    }
-  }
-  function setColumnsConfirmed(value: boolean) {
-    updateColumnsConfirmed(value);
-    if (!value) setConfirmedSnapshot(null);
-  }
-  function snapshotForTraining() {
-    if (!confirmedSnapshot || isReading) throw new Error("Hãy xác nhận dữ liệu và cột input/label trước khi huấn luyện.");
-    return structuredClone(confirmedSnapshot);
-  }
-  function updateCell(rowId: number, columnIndex: number, value: string) {
-    if (document?.rows.find((row) => row.id === rowId)?.values[columnIndex] === value) return;
-    invalidateConfirmation();
-    setDocument((current) => current && ({ ...current, rows: current.rows.map((row) =>
-      row.id === rowId ? { ...row, values: row.values.map((cell, index) => index === columnIndex ? value : cell) } : row,
-    ) }));
-  }
-  function updateRole(columnIndex: number, role: ColumnRole) {
-    if (roles[columnIndex] === role) return;
-    invalidateConfirmation();
-    setRoles((current) => current.map((value, index) => index === columnIndex ? role : value));
-  }
-  const preprocessingErrors = useMemo(() => [...getPreprocessingErrors(rows, columns, roles, excludedRows, preprocessing), ...getLabelPreprocessingErrors(columns, roles, labelPreprocessing, rows, excludedRows)], [rows, columns, roles, excludedRows, preprocessing, labelPreprocessing]);
-  function updatePreprocessing(index: number, patch: Partial<ColumnPreprocessing>) {
-    invalidateConfirmation();
-    setPreprocessing((current) => current.map((config, columnIndex) => columnIndex === index ? { ...config, ...patch } : config));
-  }
-
-  function updateLabelPreprocessing(index: number, task: LabelPreprocessing["task"]) {
-    invalidateConfirmation();
-    setLabelPreprocessing((current) => current.map((config, columnIndex) => columnIndex === index ? { task } : config));
-  }
-
-  function toggleExcluded(rowId: number) {
-    invalidateConfirmation();
-    setExcludedRows((current) => {
-      const next = new Set(current);
-      if (next.has(rowId)) next.delete(rowId); else next.add(rowId);
-      return next;
-    });
-  }
-
-  return {
-    loadId, inputFile, document, error, isReading, readProgress, cancelRead, updateFile,
-    hasHeader, setHasHeader, columns, rows, roles, updateRole,
-    excludedRows, toggleExcluded, updateCell, includedCount, missingCount: validation.missingOutputCount,
-    preprocessing, updatePreprocessing, preprocessingErrors, labelPreprocessing, updateLabelPreprocessing,
-    validation, trainingData, changes, hasDataChanges, hasUnsavedDataChanges, restoreData, downloadProcessedCsv, snapshotForTraining,
-    columnsConfirmed, setColumnsConfirmed, confirmedSnapshot, confirmDataset,
-  };
+import {useEffect,useMemo,useRef,useState,type ChangeEvent} from 'react';
+import type {ColumnPreprocessing,ColumnRole,CsvDocument,LabelPreprocessing} from '../types/dataset';
+import {createTrainingSnapshot} from '../utils/csv';
+import {createColumnPreprocessing} from '../utils/datasetValidation';
+import {downloadFile} from '../utils/downloadFile';
+import {diskRequest,loadDiskPage,materializeDisk,type DiskMeta,type DiskConfig,type DiskSummary,type DiskPage} from '../services/diskDataset';
+type Snapshot=ReturnType<typeof createTrainingSnapshot>;
+const EMPTY_PAGE:DiskPage={rows:[],excluded:[],changed:[],issues:[],total:0};
+export function useDataset(){
+ const [meta,setMeta]=useState<DiskMeta|null>(null),[error,setError]=useState(''),[isReading,setIsReading]=useState(false),[isWorking,setIsWorking]=useState(false),[readProgress,setReadProgress]=useState(0);
+ const [hasHeader,updateHeader]=useState(false),[roles,setRoles]=useState<ColumnRole[]>([]),[preprocessing,setPreprocessing]=useState<ColumnPreprocessing[]>([]),[labelPreprocessing,setLabels]=useState<LabelPreprocessing[]>([]);
+ const [summary,setSummary]=useState<DiskSummary|null>(null),[pageData,setPageData]=useState<DiskPage>(EMPTY_PAGE),[page,setPage]=useState(1),[filter,setFilter]=useState('all'),[isPageLoading,setPageLoading]=useState(false),[isValidating,setValidating]=useState(false),[revision,setRevision]=useState(0);
+ const [columnsConfirmed,setColumnsConfirmed]=useState(false),[confirmedSnapshot,setSnapshot]=useState<Snapshot|null>(null),[downloadedVersion,setDownloadedVersion]=useState('');
+ const readControl=useRef<AbortController|null>(null),version=useRef(0),mutation=useRef(0),cache=useRef(new Map<string,DiskPage>()),saving=useRef(Promise.resolve());
+ const columns=useMemo(()=>Array.from({length:meta?.columnCount||0},(_,i)=>hasHeader?meta!.first[i].trim()||`Cột ${i+1}`:`Cột ${i+1}`),[meta,hasHeader]);
+ const config=useMemo<DiskConfig>(()=>({hasHeader,columns,roles,preprocessing,labels:labelPreprocessing}),[hasHeader,columns,roles,preprocessing,labelPreprocessing]);
+ function invalidate(){setColumnsConfirmed(false);setSnapshot(null);}
+ function applyMeta(next:DiskMeta){setMeta(next);updateHeader(next.config?.hasHeader??false);setRoles(next.config?.roles??Array.from({length:next.columnCount},(_,i)=>i===next.columnCount-1?'output':'input'));setPreprocessing(next.config?.preprocessing??createColumnPreprocessing(next.columnCount));setLabels(next.config?.labels??Array.from({length:next.columnCount},()=>({task:'unset'})));setPage(1);setFilter('all');setSummary(null);setPageData(EMPTY_PAGE);invalidate();}
+ useEffect(()=>{let stopped=false;const initial=version.current;void diskRequest<DiskMeta|null>('resume').then(m=>{if(!stopped&&initial===version.current&&m)applyMeta(m);}).catch(e=>{if(!stopped)setError(e.message);});return()=>{stopped=true;};},[]);
+ useEffect(()=>()=>readControl.current?.abort(),[]);
+ useEffect(()=>{if(!meta)return;let stopped=false;const controller=new AbortController();setValidating(true);setSummary(null);cache.current.clear();const timer=setTimeout(()=>{void saving.current.then(()=>diskRequest<DiskSummary>('scan',{id:meta.id,config},controller.signal)).then(s=>{if(!stopped){setSummary(s);setValidating(false);}}).catch(e=>{if(!stopped){setError(e.message);setValidating(false);}});void diskRequest('saveConfig',{id:meta.id,config}).catch(e=>{if(!stopped)setError(e.message);});},250);return()=>{stopped=true;controller.abort();clearTimeout(timer);};},[meta?.id,config,revision]);
+ useEffect(()=>{if(!meta||!summary)return;let stopped=false;setPageLoading(true);const key=`${summary.key}:${filter}:${page}`;const cached=cache.current.get(key);if(cached){setPageData(cached);setPageLoading(false);return;}
+ void loadDiskPage(meta.id,summary.key,filter,page).then(data=>{if(stopped)return;if(page>Math.max(1,Math.ceil(data.total/50))){setPage(Math.max(1,Math.ceil(data.total/50)));return;}setPageData(data);setPageLoading(false);cache.current.clear();cache.current.set(key,data);if(data.total>page*50)void loadDiskPage(meta.id,summary.key,filter,page+1).then(next=>{if(!stopped)cache.current.set(`${summary.key}:${filter}:${page+1}`,next);}).catch(()=>{});}).catch(e=>{if(!stopped){setPageLoading(false);setError(e.message);}});return()=>{stopped=true;};},[meta?.id,summary,filter,page]);
+ async function updateFile(event:ChangeEvent<HTMLInputElement>){const file=event.target.files?.[0];event.target.value='';if(!file)return;if(meta&&!window.confirm('Đổi tệp sẽ thay dữ liệu và cấu hình hiện tại. Bạn đã tải CSV cần giữ chưa?'))return;
+ readControl.current?.abort();const attempt=++version.current;if(!/\.csv$/i.test(file.name)){setError('Vui lòng chọn tệp .csv.');return;}const control=new AbortController();readControl.current=control;setIsReading(true);setReadProgress(0);setError('');
+ try{const next=await diskRequest<DiskMeta>('import',{file},control.signal,setReadProgress);if(attempt!==version.current||control.signal.aborted){await diskRequest('delete',{id:next.id});return;}const old=meta;applyMeta(next);if(old)void diskRequest('delete',{id:old.id}).catch(()=>{});}catch(e){if(attempt===version.current&&!(e instanceof DOMException&&e.name==='AbortError'))setError(e instanceof Error?e.message:'Không đọc được CSV.');}finally{if(attempt===version.current)setIsReading(false);}}
+ function cancelRead(){readControl.current?.abort();}
+ function queueEdit(args:Record<string,unknown>){if(!meta)return;invalidate();setValidating(true);setSummary(null);mutation.current++;const id=meta.id;
+ saving.current=saving.current.then(()=>diskRequest('edit',{id,...args})).then((updated:DiskMeta)=>{setMeta(current=>current?.id===updated.id&&args.rowId===0?{...current,first:updated.first}:current);setRevision(n=>n+1);}).catch(e=>{setError(e.message);setRevision(n=>n+1);});}
+ function updateCell(rowId:number,column:number,value:string){setPageData(current=>({...current,rows:current.rows.map(row=>row.id===rowId?{...row,values:row.values.map((v,i)=>i===column?value:v)}:row)}));queueEdit({rowId,column,value});}
+ function toggleExcluded(rowId:number){setPageData(current=>({...current,excluded:current.excluded.includes(rowId)?current.excluded.filter(id=>id!==rowId):[...current.excluded,rowId]}));queueEdit({rowId,toggle:true});}
+ function updateRole(index:number,role:ColumnRole){invalidate();setRoles(v=>v.map((r,i)=>i===index?role:r));setPage(1);}
+ function updatePreprocessing(index:number,patch:Partial<ColumnPreprocessing>){invalidate();setPreprocessing(v=>v.map((c,i)=>i===index?{...c,...patch}:c));}
+ function updateLabelPreprocessing(index:number,task:LabelPreprocessing['task']){invalidate();setLabels(v=>v.map((c,i)=>i===index?{task}:c));}
+ function setHasHeader(value:boolean){invalidate();updateHeader(value);setPage(1);}
+ async function restoreData(){if(!meta)return;setIsWorking(true);invalidate();try{await saving.current;const restored=await diskRequest<DiskMeta>('restore',{id:meta.id});setMeta(restored);mutation.current++;setRevision(n=>n+1);}catch(e){setError((e as Error).message);}finally{setIsWorking(false);}}
+ const hasDataChanges=Boolean(summary&&(summary.cellCount>0||summary.excludedCount>0));const dataVersion=meta?`${meta.id}:${mutation.current}`:'';
+ async function downloadProcessedCsv(){if(!meta||!hasDataChanges)return;setIsWorking(true);setError('');try{await saving.current;const output=await diskRequest<{file:File;name:string}>('export',{id:meta.id,hasHeader});downloadFile(output.file,meta.name.replace(/\.csv$/i,'')+'-processed.csv');setDownloadedVersion(dataVersion);setTimeout(()=>void diskRequest('cleanupExport',{name:output.name}).catch(()=>{}),60000);}catch(e){setError((e as Error).message);}finally{setIsWorking(false);}}
+ const preprocessingErrors=summary?.preprocessingErrors??[];
+ const ready=Boolean(summary&&!isValidating&&summary.includedCount&&roles.includes('input')&&roles.includes('output')&&!summary.invalidIncludedCount&&!preprocessingErrors.length);
+ async function confirmDataset(){if(!meta||!summary||!columnsConfirmed||!ready)return false;setIsWorking(true);setError('');try{await saving.current;const document=await materializeDisk(meta.id,summary.key);const snapshot=createTrainingSnapshot(document,hasHeader,columns,roles,new Set(),meta.name,preprocessing,labelPreprocessing);setSnapshot(snapshot);return true;}catch(e){setError((e as Error).message);return false;}finally{setIsWorking(false);}}
+ const validation={missingInputCount:summary?.missingInputCount||0,invalidInputCount:summary?.invalidInputCount||0,missingOutputCount:summary?.missingOutputCount||0,invalidLabelCount:summary?.invalidLabelCount||0,invalidIncludedCount:summary?.invalidIncludedCount||0,rowIssues:new Map(pageData.issues)};
+ const document:CsvDocument|null=meta?{rows:[],columnCount:meta.columnCount,delimiter:meta.delimiter,paddedRows:meta.paddedRows}:null;
+ return {loadId:meta?.id||'',inputFile:meta?{name:meta.name,size:meta.size}:null,document,error,isReading,isWorking,isValidating,isPageLoading,readProgress,cancelRead,updateFile,
+ hasHeader,setHasHeader,columns,rows:pageData.rows,totalRows:summary?.totalRows??Math.max(0,(meta?.rowCount||0)-(hasHeader?1:0)),roles,updateRole,excludedRows:new Set(pageData.excluded),toggleExcluded,updateCell,includedCount:summary?.includedCount||0,excludedCount:summary?.excludedCount||0,missingCount:validation.missingOutputCount,
+ preprocessing,updatePreprocessing,preprocessingErrors,labelPreprocessing,updateLabelPreprocessing,validation,canConfirmData:ready,
+ changes:{cellCount:summary?.cellCount||0,rowCount:summary?.rowCount||0,changedCells:new Set(pageData.changed)},hasDataChanges,hasUnsavedDataChanges:hasDataChanges&&downloadedVersion!==dataVersion,restoreData,downloadProcessedCsv,
+ columnsConfirmed,setColumnsConfirmed,confirmedSnapshot,confirmDataset,snapshotForTraining:()=>{if(!confirmedSnapshot)throw Error('Hãy xác nhận dữ liệu.');return confirmedSnapshot;},
+ page,setPage,filter,setFilter,filteredCount:pageData.total,columnSamples:summary?.samples??[],estimatedBytes:summary?.estimatedBytes||0,
+ };
 }

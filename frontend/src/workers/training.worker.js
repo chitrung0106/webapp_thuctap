@@ -29,6 +29,9 @@ async function train(key){
     py.globals.set('trained_json',JSON.stringify(trained));await py.runPythonAsync('engine.gpu_finish(gpu_key, trained_json)');
    }catch(error){py.globals.set('gpu_error',error.message);await py.runPythonAsync('engine.gpu_fail(gpu_key, gpu_error)');}
   }
+  // Drop JSON bridges between jobs; otherwise large GPU matrices/weights stay rooted.
+  for(const name of ['trained_json','gpu_progress_json','gpu_error'])if(py.globals.has(name))py.globals.delete(name);
+  await py.runPythonAsync('import gc; gc.collect()');
   await new Promise(resolve=>setTimeout(resolve,15));}}
  catch(error){self.postMessage({kind:'fatal',error:error.message});}
  finally{active=false;}
@@ -42,7 +45,7 @@ self.onmessage=async({data})=>{const{id,command,args}=data;try{
  else if(command==='start'){
   for(const name of ['xgboost','lightgbm'])if(args.plan.jobs.some(job=>job.modelId===name)){emit('loading','Đang nạp thư viện model '+name);await py.loadPackage(name);}
   if(active)throw Error('Đang có lượt train trong trình duyệt.');Atomics.store(cancelFlag,0,0);
-  py.globals.set('raw_plan',JSON.stringify(args.plan));value=JSON.parse(await py.runPythonAsync('engine.start(raw_plan)'));
+  py.globals.set('raw_plan',JSON.stringify(args.plan));try{value=JSON.parse(await py.runPythonAsync('engine.start(raw_plan)'));}finally{py.globals.delete('raw_plan');}
   self.postMessage({id,value});setTimeout(()=>train(value.id),0);return;
  }else if(command==='predict'){
   if(active)throw Error('Chờ huấn luyện kết thúc trước khi thử dự đoán.');

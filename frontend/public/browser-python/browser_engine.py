@@ -1,3 +1,4 @@
+import gc
 import copy, importlib.util, json, os, platform, sys, types, uuid, time
 from collections import Counter
 from pathlib import Path
@@ -14,6 +15,7 @@ _create_estimator=training_worker.create_estimator
 def browser_estimator(model_id,task,parameters,seed):
     estimator=_create_estimator(model_id,task,parameters,seed)
     if model_id=='knn':estimator.set_params(algorithm='brute')
+    if 'n_jobs' in estimator.get_params():estimator.set_params(n_jobs=1)
     return estimator
 training_worker.create_estimator=browser_estimator
 
@@ -37,14 +39,41 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 def emit(run):
     browser_progress(json.dumps(run,ensure_ascii=False,allow_nan=False))
-def guard(request):
-    # Conservative estimate of dense preprocessing intermediates, not a browser RAM measurement.
-    width=0
+def memory_estimate(request, job=None):
+    # A conservative budget, not a measurement of free physical RAM/VRAM.
+    rows=request.dataset.data.inputs; n=len(rows); width=0
     for i,spec in enumerate(request.dataset.input_preprocessing):
-        width += len({row[i] for row in request.dataset.data.inputs}) if spec.config.kind=='category' and spec.config.encoding=='onehot' else 1
-    estimate=len(request.dataset.data.inputs)*width*8*4
+        if spec.config.kind=='category' and spec.config.encoding=='onehot':
+            groups=set()
+            for row in rows:
+                groups.add(row[i])
+                if len(groups)>10000:raise ValueError('Quá 10000 nhóm One-hot. Hãy giảm số nhóm/cột trước khi train.')
+            width+=len(groups)
+        else:width+=1
+    raw=sum(48+sum(len(v)*2+32 for v in row) for row in rows)
+    raw+=sum(48+sum(len(v)*2+32 for v in row) for row in request.dataset.data.outputs)
+    base=raw*6+n*max(1,width)*8*6+len(request.dataset.csv)*2
+    if job is None:return base
+    p=job.parameters; model=job.model_id; train=max(1,int(n*request.split.train_percent/100)); extra=0
+    if model in ('tree','forest','extra_trees','gradient_boosting','xgboost','lightgbm'):
+        trees=int(p.get('n_estimators',100)) if model!='tree' else 1
+        depth=p.get('max_depth'); nodes=min(2*train,2**(min(int(depth),30)+1)-1) if depth and int(depth)>0 else 2*train
+        extra=trees*nodes*128+train*width*8*2
+    elif model=='svm':extra=min(200*1024*1024,train*train*8)+train*width*8*2
+    elif model=='knn':extra=train*width*8+min(256,n)*train*8
+    elif model=='mlp':
+        layers=[width]+list(p.get('hidden_layer_sizes',[64,32]))+[max(1,len(set(r[job.target_index] for r in request.dataset.data.outputs))) if request.task=='classification' else 1]
+        weights=sum(a*b+b for a,b in zip(layers,layers[1:]));extra=weights*8*8+n*sum(layers)*8*4
+    else:extra=width*width*8*2+train*width*8
+    # Artifacts live in the WASM in-memory filesystem until downloaded/retired.
+    stored=sum(path.stat().st_size for path in ROOT.glob('*/*.joblib'))
+    return base+extra+stored
+
+def guard(request,job=None):
+    estimate=memory_estimate(request,job)
     if estimate>MAX_WORKING_BYTES:
-        raise ValueError(f'Dữ liệu sau encoding có thể cần khoảng {estimate//1024//1024} MiB cho các ma trận trung gian; vượt ngân sách thử nghiệm 128 MiB. Giảm số nhóm/cột hoặc dùng máy chủ.')
+        name=job.model_name if job else 'Dữ liệu train'
+        raise MemoryError(f'{name}: ước tính cần {estimate/1048576:.1f} MiB, vượt ngân sách an toàn 128 MiB. Hãy giảm dòng/cột hoặc độ phức tạp model. Không tự lấy mẫu và không tự chuyển GPU sang CPU. Dữ liệu chỉnh sửa vẫn nằm trong kho trình duyệt.')
     return estimate
 
 def start(raw):
@@ -87,8 +116,11 @@ def next_job(key):
         frame,indices=CONTEXTS[key]
         pending=next((i for i,r in enumerate(run['results']) if r['status']=='pending'),None)
         if pending is None:
-            run.update(status='completed',completedAt=now());CONTEXTS.pop(key,None);emit(run);return False
+            run.update(status='completed',completedAt=now());CONTEXTS.pop(key,None);gc.collect();emit(run);return False
         result=run['results'][pending];job=request.jobs[pending];result['status']='running';emit(run)
+        try:guard(request,job)
+        except MemoryError as error:
+            result.update(status='failed',error=str(error));gc.collect();emit(run);return True
         if job.model_id=='mlp' and EXECUTIONS[key].get('device')=='gpu':
             try:
                 context,data=browser_gpu.prepare(request,job,frame,indices)
@@ -106,10 +138,15 @@ def next_job(key):
             public.update(pythonVersion=platform.python_version(),executionDevice='cpu',executionBackend='scikit-learn-wasm');artifact['result']=public
             path=run_directory(key)/(result['id']+'.joblib');joblib.dump(artifact,path,compress=3)
             result.update(public,artifactBytes=path.stat().st_size,status='succeeded')
+            del artifact,public
+        except MemoryError:
+            result.update(status='failed',error='Không đủ bộ nhớ khi cấp phát cho model. Hãy giảm dòng/cột hoặc độ phức tạp model rồi thử lại. Dữ liệu đã chỉnh sửa vẫn được giữ trên ổ đĩa.')
         except TrainingCancelled:
             result['status']='cancelled'
         except Exception as error:
             result.update(status='failed',error=f'{type(error).__name__}: {error}')
+        if 'artifact' in locals():del artifact
+        gc.collect()
         emit(run);return True
     except Exception as error:
         run.update(status='failed',error=f'{type(error).__name__}: {error}',completedAt=now())
@@ -139,7 +176,7 @@ def gpu_progress(key,raw):
     i,_,_=GPU_PENDING[key];data=json.loads(raw);RUNS[key]['results'][i].update(history=data['history'],historyKind='epoch',progress={'current':data['epoch'],'total':data['total']},executionDevice='gpu',executionBackend='tensorflowjs-webgpu');emit(RUNS[key])
 def gpu_finish(key,raw):
     i,context,_=GPU_PENDING[key];request=REQUESTS[key];result=RUNS[key]['results'][i]
-    if browser_cancelled():result['status']='cancelled';emit(RUNS[key]);return
+    if browser_cancelled():result['status']='cancelled';GPU_PENDING.pop(key,None);gc.collect();emit(RUNS[key]);return
     public,artifact=browser_gpu.finish(request,request.jobs[i],context,json.loads(raw),CONTEXTS[key][1])
     public['pythonVersion']=platform.python_version();artifact['result']=public
     path=run_directory(key)/(result['id']+'.joblib');joblib.dump(artifact,path,compress=3)
@@ -148,21 +185,8 @@ def gpu_finish(key,raw):
 def gpu_fail(key,message):
     pending=GPU_PENDING.pop(key,None)
     if pending is None:return
-    i,_,_=pending;result=RUNS[key]['results'][i]
-    if browser_cancelled():result.update(status='cancelled');emit(RUNS[key]);return
-    result.update(executionDevice='cpu',executionBackend='scikit-learn-wasm',gpuFallbackReason=message)
-    result['warnings']=['GPU không khả dụng; đang chạy bằng CPU: '+message];emit(RUNS[key])
-    # Explicitly record fallback. GPU is never claimed when computation ran on CPU.
-    request=REQUESTS[key];frame,indices=CONTEXTS[key]
-    try:
-        def progress(epoch,maximum,history):
-            result.update(history=history,historyKind='epoch',progress={'current':epoch,'total':maximum},executionDevice='cpu');emit(RUNS[key])
-        public,artifact=run_model(request,request.jobs[i],frame,indices,progress,browser_cancelled)
-        if browser_cancelled():raise TrainingCancelled()
-        public.update(executionDevice='cpu',executionBackend='scikit-learn-wasm',gpuFallbackReason=message,pythonVersion=platform.python_version())
-        public['warnings'].insert(0,'Không chạy được GPU, đã dùng CPU: '+message)
-        artifact['result']=public;path=run_directory(key)/(result['id']+'.joblib');joblib.dump(artifact,path,compress=3)
-        result.update(public,artifactBytes=path.stat().st_size,status='succeeded')
-    except TrainingCancelled:result['status']='cancelled'
-    except Exception as error:result.update(status='failed',error=str(error))
-    emit(RUNS[key])
+    i=pending[0];result=RUNS[key]['results'][i]
+    if browser_cancelled():result.update(status='cancelled')
+    else:result.update(status='failed',executionDevice='gpu',executionBackend='tensorflowjs-webgpu',error='Không chạy được GPU: '+message+'. Model đã dừng; không tự chuyển sang CPU. Hãy giảm batch size/độ phức tạp hoặc tự chọn CPU cho lượt mới.')
+    del pending
+    gc.collect();emit(RUNS[key])

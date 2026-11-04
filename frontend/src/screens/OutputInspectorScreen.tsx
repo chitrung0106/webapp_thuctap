@@ -20,7 +20,7 @@ export default function OutputInspectorScreen() {
   const activeStep = step === 3 && run.runId ? 3 : step === 2 && dataset.confirmedSnapshot ? 2 : 1;
   const headingRef = useRef<HTMLHeadingElement>(null);
   const previousStep = useRef(activeStep);
-  useEffect(()=>{const warn=(event:BeforeUnloadEvent)=>{if(dataset.hasUnsavedDataChanges||dataset.isReading||run.isStarting||(run.runId?.endsWith('-browser')&&(hasUnsavedBrowserModels()||Boolean(run.run&&isRunActive(run.run.status))))){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dataset.hasUnsavedDataChanges,dataset.isReading,run.isStarting,run.run,run.runId]);
+  useEffect(()=>{const warn=(event:BeforeUnloadEvent)=>{if(dataset.hasUnsavedDataChanges||dataset.isReading||dataset.isWorking||dataset.isValidating||run.isStarting||(run.runId?.endsWith('-browser')&&(hasUnsavedBrowserModels()||Boolean(run.run&&isRunActive(run.run.status))))){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dataset.hasUnsavedDataChanges,dataset.isReading,dataset.isWorking,dataset.isValidating,run.isStarting,run.run,run.runId]);
 
   useEffect(() => {
     if (previousStep.current === activeStep) return;

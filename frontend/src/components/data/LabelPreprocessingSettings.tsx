@@ -4,7 +4,7 @@ import HelpNote from "../common/HelpNote";
 interface LabelPreprocessingSettingsProps { dataset: ReturnType<typeof useDataset>; }
 
 export default function LabelPreprocessingSettings({ dataset }: LabelPreprocessingSettingsProps) {
-  const { columns, roles, rows, excludedRows, labelPreprocessing, updateLabelPreprocessing, preprocessingErrors } = dataset;
+  const { columns, roles, labelPreprocessing, updateLabelPreprocessing, preprocessingErrors } = dataset;
   return (
     <section className="label-preprocessing" aria-labelledby="label-processing-title">
       <div className="dataset-processing-heading"><div><h3 id="label-processing-title">Cách xử lý cột label</h3></div></div>
@@ -12,7 +12,7 @@ export default function LabelPreprocessingSettings({ dataset }: LabelPreprocessi
         {columns.map((name, index) => {
           if (roles[index] !== "output") return null;
           const task = labelPreprocessing[index]?.task ?? "unset";
-          const values = [...new Set(rows.filter((row) => !excludedRows.has(row.id)).map((row) => row.values[index]).filter((value) => value.trim()))];
+          const values = dataset.columnSamples[index] ?? [];
           const errors = preprocessingErrors.filter((error) => error.startsWith(`Label ${name}:`) || error.startsWith("Các label trong cùng lượt"));
           return (
             <article className={`column-processing-card label-processing-card ${errors.length ? "is-incomplete" : "is-complete"}`} key={index}>
@@ -29,7 +29,7 @@ export default function LabelPreprocessingSettings({ dataset }: LabelPreprocessi
               </div>
               {(task === "binary" || task === "multiclass") && <div className="label-processing-explanation">
                 <strong>Phần mềm tự đổi tên nhóm thành mã số</strong>
-                <p>Bạn đã chọn {task === "binary" ? "phân loại hai lớp" : "phân loại nhiều lớp"}. Có {values.length} nhóm trong các dòng đang giữ lại. Ví dụ Bình thường / Có lỗi được đổi thành mã số khi train; kết quả dự đoán sẽ hiển thị lại tên ban đầu. Bạn không cần tự đổi.</p>
+                <p>Bạn đã chọn {task === "binary" ? "phân loại hai lớp" : "phân loại nhiều lớp"}. Ví dụ Bình thường / Có lỗi được đổi thành mã số khi train; kết quả dự đoán sẽ hiển thị lại tên ban đầu. Bạn không cần tự đổi.</p>
                 <p>Mã chỉ đại diện cho lớp, không mang ý nghĩa lớn nhỏ. Cả nhãn chữ và mã nhóm viết bằng số đều được xử lý như tên lớp.</p>
                 <p>Label 0, 1, 2 cũng được coi là tên nhóm; model chọn nhóm, không trả giá trị ở giữa như 1.5.</p>
               </div>}
